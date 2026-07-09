@@ -1,6 +1,6 @@
 // ============================================================================
 // ui.js — DOM UI: HUD, inventory grids + drag & drop, loot panel, base
-//         station panels (stash/trader/benches), tooltips, screens
+//         station panels (stash/crafting benches/workbench), tooltips, screens
 // ============================================================================
 'use strict';
 
@@ -76,10 +76,10 @@ function moveSlot(fk,fi,tk,ti){
 // quick transfer: click behaviour depends on context
 function quickTransfer(key,i){
   const s=uiGetSlot(key,i); if(!s) return;
-  // trader open in base: clicking your own items sells them
-  if(G.mode==='base' && STATION && STATION.type==='trader' &&
-     (key==='inv'||key.startsWith('eq:')||key==='pouch')){
-    sellSlot(key,i); return;
+  // Workbench open in base: clicking your gear recycles it into materials
+  if(G.mode==='base' && STATION && STATION.type==='upgrade' &&
+     (key==='inv'||key==='stash'||key.startsWith('eq:')||key==='pouch')){
+    recycleSlot(key,i); return;
   }
   let target=null;
   if(G.mode==='raid'){
@@ -135,16 +135,22 @@ function smartAction(key,i,alt){
   if(d.use){ startUse(key,i,s); return; }
 }
 
-function sellSlot(key,i){
+// break one item down into materials at the Workbench
+function recycleSlot(key,i){
   const s=uiGetSlot(key,i); if(!s) return;
   const d=ITEMS[s.id];
-  if(d.inf){ uiToast('Boris squints. "That junk pistol? Keep it."','bad'); return; }
-  if(d.type==='cash'){ G.save.cash+=s.q; uiSetSlot(key,i,null); }
-  else{
-    const v=d.val*(s.q||1);
-    G.save.cash+=v; uiSetSlot(key,i,null);
-    uiToast('Sold '+d.name+(s.q>1?' ×'+s.q:'')+' for $'+v,'good');
+  if(d.inf){ uiToast("The Rust Pistol can't be scrapped.",'bad'); return; }
+  const yld=recycleYield(s);
+  if(!yld.length){ uiToast(d.name+" won't recycle into anything useful.",''); return; }
+  uiSetSlot(key,i,null); // one item off the stack
+  if((s.q||1)>1){ s.q--; uiSetSlot(key,i,s); }
+  let label=[];
+  for(const y of yld){
+    if(invAddItem(G.save.stash,{id:y.id,q:y.q}) && invAddItem(G.save.inv,{id:y.id,q:y.q}))
+      { uiToast('No room for recycled materials!','bad'); }
+    label.push(y.q+'× '+ITEMS[y.id].icon);
   }
+  uiToast('Recycled '+d.name+' → '+label.join(' '),'good');
   sfx('buy'); saveGame(); uiRefreshAll();
 }
 
@@ -182,8 +188,7 @@ function renderPouchRow(el){
 }
 function weightText(){
   const w=calcWeight(), cap=weightCap();
-  return 'Weight: '+w.toFixed(1)+' / '+cap.toFixed(0)+' kg'+(w>cap?'  — ENCUMBERED':'')+
-         '   ·   💵 $'+G.save.cash;
+  return 'Weight: '+w.toFixed(1)+' / '+cap.toFixed(0)+' kg'+(w>cap?'  — ENCUMBERED':'');
 }
 
 function uiRefreshAll(){
@@ -272,9 +277,9 @@ document.addEventListener('contextmenu',e=>{
 function showTooltip(s,x,y){
   const d=ITEMS[s.id];
   let h='<div class="tname">'+d.icon+' '+d.name+'</div><div class="ttype">'+d.type+
-        ' · '+(d.w*(s.q||1)).toFixed(1)+'kg · $'+d.val*(s.q||1)+'</div>';
+        ' · '+(d.w*(s.q||1)).toFixed(1)+'kg</div>';
   if(d.type==='gun'){
-    h+='<div class="tstat">DMG '+d.dmg+(d.pellets?('×'+d.pellets):'')+' · RPM '+d.rpm+
+    h+='<div class="tstat">ONE-SHOT'+(d.pellets?(' ×'+d.pellets+' pellets'):'')+' · RPM '+d.rpm+
        ' · MAG '+(s.ammo||0)+'/'+d.mag+'</div><div class="tstat">Ammo: '+
        (d.inf?'∞ self-forging':ITEMS[d.ammo].name)+(d.auto?' · AUTO':'')+'</div>';
     if(d.slots && d.slots.length) h+='<div class="tstat">Mod slots: '+d.slots.join(', ')+'</div>';
@@ -454,77 +459,97 @@ function consumeItem(id,want){
   return want-need;
 }
 
+// format a {mat:n} cost, coloring shortfalls red
+function costHtml(cost){
+  return Object.keys(cost).map(m=>{
+    const have=countItem(m), need=cost[m];
+    return '<span style="color:'+(have>=need?'#b8c0d0':'#e05252')+'">'+need+'× '+ITEMS[m].icon+'</span>';
+  }).join(' ');
+}
+const canAfford=cost=>Object.keys(cost).every(m=>countItem(m)>=cost[m]);
+function payCost(cost){ for(const m in cost) consumeItem(m,cost[m]); }
+
 function renderStationContent(){
   const L=$('stationcontent');
   const type=STATION.type;
   const bench=BENCH_DEFS[type];
   $('stationtitle').textContent =
     type==='stash' ? '📦 Stash — '+G.save.stash.length+' slots' :
-    type==='trader' ? '🧔 Boris the Trader — 💵 $'+G.save.cash :
-    bench ? bench.icon+' '+bench.name : '🔧 General Workbench';
+    bench ? bench.icon+' '+bench.name+' — Lv '+(G.save.benches[type]||1) : '🔧 Workbench';
+
   if(type==='stash'){
     L.innerHTML='<div class="stashgrid" id="st-stashgrid"></div>'+
       '<div class="panelhint">Click = move between stash & backpack · Drag for precise placement · Right-click = equip</div>';
     renderGrid($('st-stashgrid'),'stash',G.save.stash.length);
   }
-  else if(type==='trader'){
-    let h='';
-    for(let i=0;i<TRADER_STOCK.length;i++){
-      const st=TRADER_STOCK[i], d=ITEMS[st.id];
-      h+='<div class="shoprow"><span class="ico">'+d.icon+'</span><span class="pn">'+d.name+
-         (st.q>1?' ×'+st.q:'')+'</span><span class="pr">$'+st.price+'</span>'+
-         '<button class="small" data-buy="'+i+'"'+(G.save.cash<st.price?' disabled':'')+'>Buy</button></div>';
-    }
-    h+='<div class="panelhint">Selling: click any item in your <b>backpack / equipment</b> to sell it instantly.</div>';
-    L.innerHTML=h;
-    L.querySelectorAll('[data-buy]').forEach(b=>b.addEventListener('click',()=>buyStock(+b.dataset.buy)));
-  }
   else if(bench){
-    // placeholder bench — walkable, inspectable, not yet operational
-    let h='<div class="benchbox"><div class="benchicon">'+bench.icon+'</div>'+
-      '<div class="benchtag">🚧 UNDER CONSTRUCTION</div>'+
-      '<p>Planned services:</p><ul>';
-    for(const p of bench.planned) h+='<li>'+p+'</li>';
-    h+='</ul><p class="benchwants">Will want: '+bench.wants+'</p>'+
-      '<button class="small" disabled>Build (coming soon)</button>'+
-      '<div class="panelhint">Stockpile 🪵 Timber and 🪨 Stone — melee-swing trees and rocks out in the field.</div></div>';
+    const lvl=G.save.benches[type]||1;
+    let h='<p class="benchblurb">'+bench.blurb+'</p>';
+    // upgrade card
+    if(lvl<bench.maxLvl){
+      const up=bench.upCost[lvl+1];
+      h+='<div class="upcard"><h4>⬆ Upgrade to Level '+(lvl+1)+'</h4>'+
+        '<p>Unlocks higher-tier recipes.</p><div class="cost">'+costHtml(up)+'</div>'+
+        '<button class="small" data-benchup="1"'+(canAfford(up)?'':' disabled')+'>Upgrade Bench</button></div>';
+    }else h+='<div class="upcard"><h4>★ Level '+lvl+' — fully upgraded</h4></div>';
+    // recipes
+    h+='<div class="sub">Recipes</div>';
+    bench.recipes.forEach((r,ri)=>{
+      const d=ITEMS[r.out], locked=r.lvl>lvl, afford=canAfford(r.cost);
+      h+='<div class="craftrow'+(locked?' locked':'')+'"><span class="ico">'+d.icon+'</span>'+
+        '<span class="pn">'+d.name+(r.q>1?' ×'+r.q:'')+'</span>'+
+        (locked?'<span class="lk">Lv '+r.lvl+'</span>'
+               :'<span class="cst">'+costHtml(r.cost)+'</span>'+
+                '<button class="small" data-craft="'+ri+'"'+(afford?'':' disabled')+'>Craft</button>')+
+        '</div>';
+    });
+    h+='<div class="panelhint">Materials come from raids & recycling. Craft into your stash.</div>';
     L.innerHTML=h;
+    const upBtn=L.querySelector('[data-benchup]');
+    if(upBtn) upBtn.addEventListener('click',()=>upgradeBench(type));
+    L.querySelectorAll('[data-craft]').forEach(b=>b.addEventListener('click',()=>craftRecipe(type,+b.dataset.craft)));
   }
-  else if(type==='upgrade'){
-    let h='';
+  else if(type==='upgrade'){ // the Workbench: structural upgrades + recycler
+    let h='<div class="sub">Base Upgrades</div>';
     for(const k in UPGRADE_DEFS){
       const u=UPGRADE_DEFS[k], owned=G.save.upgrades[k];
-      let cost='$'+u.cash;
-      for(const m in u.mats) cost+=' + '+u.mats[m]+'× '+ITEMS[m].name;
-      let can=G.save.cash>=u.cash;
-      for(const m in u.mats) if(countItem(m)<u.mats[m]) can=false;
       h+='<div class="upcard"><h4>'+u.icon+' '+u.name+'</h4><p>'+u.desc+'</p>'+
         (owned?'<div class="cost" style="color:var(--stam)">✔ BUILT</div>'
-              :'<div class="cost">'+cost+'</div><button class="small" data-up="'+k+'"'+(can?'':' disabled')+'>Build</button>')+
+              :'<div class="cost">'+costHtml(u.mats)+'</div><button class="small" data-up="'+k+'"'+(canAfford(u.mats)?'':' disabled')+'>Build</button>')+
         '</div>';
     }
-    h+='<div class="panelhint">Scrap Metal and Copper Wires are found in raids — crates & zombie pockets.</div>';
+    h+='<div class="sub">♻ Recycler</div>'+
+       '<div class="panelhint">Click any weapon, attachment, melee or valuable in your '+
+       '<b>backpack / stash / equipment</b> to break it into materials.</div>';
     L.innerHTML=h;
-    L.querySelectorAll('[data-up]').forEach(b=>b.addEventListener('click',()=>buyUpgrade(b.dataset.up)));
+    L.querySelectorAll('[data-up]').forEach(b=>b.addEventListener('click',()=>buildUpgrade(b.dataset.up)));
   }
 }
-function buyStock(i){
-  const st=TRADER_STOCK[i], d=ITEMS[st.id];
-  if(G.save.cash<st.price){ uiToast('Not enough cash.','bad'); return; }
-  const slot={id:st.id,q:st.q};
+function upgradeBench(type){
+  const bench=BENCH_DEFS[type], lvl=G.save.benches[type]||1;
+  if(lvl>=bench.maxLvl) return;
+  const cost=bench.upCost[lvl+1];
+  if(!canAfford(cost)) return;
+  payCost(cost);
+  G.save.benches[type]=lvl+1;
+  sfx('gacha'); uiToast(bench.name+' upgraded to Level '+(lvl+1)+'!','good');
+  saveGame(); uiRefreshAll();
+}
+function craftRecipe(type,ri){
+  const bench=BENCH_DEFS[type], r=bench.recipes[ri];
+  if(r.lvl>(G.save.benches[type]||1) || !canAfford(r.cost)) return;
+  payCost(r.cost);
+  const d=ITEMS[r.out], slot={id:r.out, q:r.q};
   if(d.type==='gun'){ slot.q=1; slot.ammo=0; slot.att={}; }
-  const left=invAddItem(G.save.inv,slot)&&invAddItem(G.save.stash,slot);
-  if(left){ uiToast('No room anywhere!','bad'); return; }
-  G.save.cash-=st.price;
+  if(invAddItem(G.save.stash,slot) && invAddItem(G.save.inv,slot))
+    uiToast('No room — crafted item lost!','bad');
+  else uiToast('Crafted '+d.icon+' '+d.name+(r.q>1?' ×'+r.q:'')+'.','good');
   sfx('buy'); saveGame(); uiRefreshAll();
 }
-function buyUpgrade(k){
+function buildUpgrade(k){
   const u=UPGRADE_DEFS[k];
-  if(G.save.upgrades[k]) return;
-  if(G.save.cash<u.cash) return;
-  for(const m in u.mats) if(countItem(m)<u.mats[m]) return;
-  G.save.cash-=u.cash;
-  for(const m in u.mats) consumeItem(m,u.mats[m]);
+  if(G.save.upgrades[k] || !canAfford(u.mats)) return;
+  payCost(u.mats);
   G.save.upgrades[k]=true;
   if(k==='stash2') for(let i=0;i<32;i++) G.save.stash.push(null);
   if(k==='pouch3'){ G.save.pouchSlots=3; while(G.save.pouch.length<3) G.save.pouch.push(null); }
@@ -552,12 +577,12 @@ function uiShowDeath(cause,lost,hadOldCorpse){
     (hadOldCorpse?'<br><br><span style="color:var(--hp)">Your previous corpse stash was lost to the horde.</span>':'')+
     '<br><br>🔒 Secure pouch items and your ⚙️ Rust Pistol stay with you.';
 }
-function uiShowSummary(zone,kills,time,items,value){
+function uiShowSummary(zone,kills,time,items,mats){
   uiShowScreen('summary');
   const t=time|0;
   $('sumdetail').innerHTML=
     'Extracted via <b>'+zone+'</b> in <b>'+Math.floor(t/60)+':'+String(t%60).padStart(2,'0')+'</b>.<br>'+
     'Zombies put down: <b>'+kills+'</b><br>'+
-    'Backpack: <b>'+items+' items</b> (est. value <b style="color:var(--energy)">$'+value+'</b>)<br>'+
-    'Sell junk to Boris, stash the keepers, expand the bunker.';
+    'Backpack: <b>'+items+' item stacks</b> · <b style="color:var(--energy)">'+mats+'</b> raw materials<br>'+
+    'Stash the keepers, craft at the benches, expand the bunker.';
 }

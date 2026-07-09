@@ -38,7 +38,7 @@ function newGame(){
   saveGame();
   enterBase();
   uiToast('Welcome home. Walk to the ladder and press E to deploy.','good');
-  uiToast('Boris, the stash and the workshop benches are all down here — walk up and press E.','');
+  uiToast('The stash and the crafting benches are all down here — walk up and press E.','');
 }
 function continueGame(){
   const s=loadGame();
@@ -85,23 +85,19 @@ function deploy(){
 // game.js calls these ---------------------------------------------------------
 function handleExtract(zone){
   sfx('extract');
-  // cash items become bunker funds
-  let value=0, count=0;
-  for(let i=0;i<G.save.inv.length;i++){
-    const s=G.save.inv[i];
+  // tally the haul: kept item stacks + how many raw materials came home
+  let count=0, mats=0;
+  const matIds=new Set(['scrap','wires','wood','stone','tape','feather']);
+  for(const s of G.save.inv){
     if(!s) continue;
-    if(s.id==='cash'){ G.save.cash+=s.q; G.save.inv[i]=null; continue; }
-    value+=ITEMS[s.id].val*(s.q||1); count++;
-  }
-  for(let i=0;i<G.save.pouch.length;i++){
-    const s=G.save.pouch[i];
-    if(s && s.id==='cash'){ G.save.cash+=s.q; G.save.pouch[i]=null; }
+    count++;
+    if(matIds.has(s.id)) mats+=s.q;
   }
   syncCorpse();
   G.save.stats.extracts++;
   saveGame();
   G.mode='summary';
-  setTimeout(()=>uiShowSummary(zone.name, RAID.kills, RAID.time, count, value), 600);
+  setTimeout(()=>uiShowSummary(zone.name, RAID.kills, RAID.time, count, mats), 600);
 }
 function handlePlayerDeath(cause){
   sfx('groandie'); sfx('hurt');

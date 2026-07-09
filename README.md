@@ -22,6 +22,14 @@
 > - **No extraction near the drop** — travel to one of four remote exits, then
 >   **hold it for 75 seconds** while the alarm draws the horde.
 > - **The bunker is a single open room** with every station along the walls.
+> - **No cash, no trader** — a pure scavenge economy. Everything is crafted or
+>   recycled.
+> - **Arc-Raiders-style crafting benches**: the Med Bay, Gunsmith and Equipment
+>   Bench each have a **level** you raise with materials to unlock higher-tier
+>   recipes; you craft ammo, meds, shield cells, attachments, weapons and totems
+>   from scavenged materials. The Workbench hosts base upgrades and a
+>   **Recycler** that breaks guns, attachments and valuables back into
+>   materials.
 
 A 2D, top-down, single-player **extraction looter-shooter prototype** inspired by
 *Escape from Duckov* — the operator is the little orange Claude creature, and the

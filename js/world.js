@@ -340,11 +340,10 @@ function genBaseWorld(){
     {type:'exit',    x:15*S,   y:3.2*S,  label:'Deploy to Ground Zero'},
     {type:'stash',   x:4.2*S,  y:5*S,    label:'Open Stash'},
     {type:'bed',     x:4.2*S,  y:13*S,   label:'Rest'},
-    {type:'trader',  x:25.4*S, y:5*S,    label:'Trade with Boris'},
-    {type:'medbay',  x:25.4*S, y:13*S,   label:BENCH_DEFS.medbay.label},
-    {type:'upgrade', x:11*S,   y:16*S,   label:'Use General Workbench'},
-    {type:'gunsmith',x:16*S,   y:16.4*S, label:BENCH_DEFS.gunsmith.label},
-    {type:'equip',   x:21*S,   y:16*S,   label:BENCH_DEFS.equip.label},
+    {type:'medbay',  x:25.4*S, y:5*S,    label:'Use Med Bay'},
+    {type:'gunsmith',x:25.4*S, y:13*S,   label:'Use Gunsmith'},
+    {type:'equip',   x:20*S,   y:16.2*S, label:'Use Equipment Bench'},
+    {type:'upgrade', x:11*S,   y:16.2*S, label:'Use Workbench'},
   ];
   return {t, w, h, stations, containers:[], extractions:[], enemySpawns:[],
           playerSpawn:{x:15*S, y:9.5*S}};

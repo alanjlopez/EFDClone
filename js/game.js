@@ -1402,22 +1402,6 @@ function drawStations(){
         ctx.fillStyle='#e8e4dc'; ctx.fillRect(-12,-18,24,10);
         ctx.strokeStyle='#23262e'; ctx.strokeRect(-14,-20,28,40);
         break;
-      case 'trader':
-        // counter
-        ctx.fillStyle='#6e5024'; ctx.fillRect(-20,10,40,8);
-        ctx.strokeStyle='#43310f'; ctx.strokeRect(-20,10,40,8);
-        // Boris
-        ctx.fillStyle='rgba(0,0,0,0.3)';
-        ctx.beginPath(); ctx.ellipse(0,6,11,4,0,0,7); ctx.fill();
-        ctx.fillStyle='#5c5148'; // coat
-        ctx.beginPath(); ctx.ellipse(0,-2,11,9,0,0,7); ctx.fill();
-        ctx.fillStyle='#c9a37a'; // head
-        ctx.beginPath(); ctx.arc(0,-8,6,0,7); ctx.fill();
-        ctx.fillStyle='#4a3a26'; // magnificent beard
-        ctx.beginPath(); ctx.arc(0,-5.5,5,0.3,Math.PI-0.3); ctx.fill();
-        ctx.fillStyle='#1a1a1a';
-        ctx.beginPath(); ctx.arc(-2,-9,0.9,0,7); ctx.arc(2,-9,0.9,0,7); ctx.fill();
-        break;
       case 'upgrade':
         ctx.fillStyle='#6e5024'; ctx.fillRect(-18,-10,36,20);
         ctx.strokeStyle='#43310f'; ctx.strokeRect(-18,-10,36,20);
