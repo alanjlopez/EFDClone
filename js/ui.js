@@ -295,13 +295,9 @@ function showTooltip(s,x,y){
 function uiUpdateHUD(){
   if(!P||!RAID) return;
   $('b-hp').style.width=(P.hp/P.maxhp*100)+'%';
+  $('b-sh').style.width=(P.shield/P.shieldMax*100)+'%';
   $('b-st').style.width=P.stam+'%';
-  $('b-en').style.width=P.energy+'%';
-  $('b-hy').style.width=P.hyd+'%';
-  $('st-bleed').classList.toggle('on',P.bleed);
   $('st-enc').classList.toggle('on',!RAID.isBase && calcWeight()>weightCap());
-  $('st-hungry').classList.toggle('on',!RAID.isBase && P.energy<=25);
-  $('st-thirst').classList.toggle('on',!RAID.isBase && P.hyd<=25);
   // raid-only widgets
   $('timerbox').style.display=RAID.isBase?'none':'block';
   $('basehint').style.display=RAID.isBase?'block':'none';

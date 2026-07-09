@@ -10,6 +10,7 @@
     --bg:#0d0f14; --panel:#151a23; --panel2:#1c2230; --line:#2a3244;
     --text:#e8e2d9; --dim:#8b93a5;
     --hp:#e05252; --stam:#57d98f; --energy:#d9a957; --hyd:#57a8d9; --storm:#a45de0;
+    --shield:#6fb6e0;
   }
   *{box-sizing:border-box; margin:0; padding:0; user-select:none; -webkit-user-select:none;}
   html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
@@ -175,14 +176,10 @@
 <div id="hud">
   <div id="vitals">
     <div class="bar"><div class="fill" id="b-hp" style="background:var(--hp)"></div><div class="blabel">HP</div></div>
+    <div class="bar"><div class="fill" id="b-sh" style="background:var(--shield)"></div><div class="blabel">SHIELD</div></div>
     <div class="bar"><div class="fill" id="b-st" style="background:var(--stam)"></div><div class="blabel">STAMINA</div></div>
-    <div class="bar" style="width:150px;height:9px"><div class="fill" id="b-en" style="background:var(--energy)"></div><div class="blabel" style="font-size:7px;line-height:8px">ENERGY</div></div>
-    <div class="bar" style="width:150px;height:9px"><div class="fill" id="b-hy" style="background:var(--hyd)"></div><div class="blabel" style="font-size:7px;line-height:8px">HYDRATION</div></div>
     <div id="statusicons">
-      <div class="stico" id="st-bleed" style="color:var(--hp)">🩸 BLEEDING</div>
       <div class="stico" id="st-enc" style="color:var(--energy)">⚓ ENCUMBERED</div>
-      <div class="stico" id="st-hungry" style="color:var(--energy)">🍞 STARVING</div>
-      <div class="stico" id="st-thirst" style="color:var(--hyd)">💧 DEHYDRATED</div>
     </div>
     <div id="awareness" class="aw-hidden">🌿 HIDDEN</div>
   </div>

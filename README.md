@@ -1,11 +1,21 @@
 # Escape from Claudov — 2D Prototype
 
 > **Branch: `one-shot-horde-mode`** — an experimental ruleset on top of the main
-> prototype: every gun kills in one shot but magazines are tiny (2–12 rounds);
-> the map starts half-empty and zombies **claw out of the ground** around you,
-> slowly ramping from one every ~9s to one every ~2.2s by minute 8 (extraction
-> alarms triple the rate); the storm lands at 9:00 for a 5–10 minute run; and
-> taking items out of containers channels a short loot timer per item.
+> prototype:
+> - Every gun kills in one shot but magazines are tiny (2–12 rounds).
+> - The map starts half-empty and zombies **claw out of the ground** around you,
+>   slowly ramping from one every ~9s to one every ~2.2s by minute 8 (extraction
+>   alarms triple the rate); storm at 9:00 for a 5–10 minute run.
+> - Taking items out of containers channels a short loot timer per item.
+> - **Vitals are just HP, Shield and Stamina** — no bleeding, hunger or thirst.
+>   Shield soaks damage before HP and regenerates after a lull; meds/food heal
+>   HP, drink/cells recharge shield.
+> - **Bigger buildings**, with ~30% rolling oversized into multi-room structures
+>   partitioned by interior walls and connected by doorways.
+> - **Gunshots carry ~2× farther**, pulling zombies from a wide radius.
+> - **No extraction near the drop** — you must travel to one of four remote
+>   exits.
+> - **The bunker is a single open room** with every station along the walls.
 
 A 2D, top-down, single-player **extraction looter-shooter prototype** inspired by
 *Escape from Duckov* — the operator is the little orange Claude creature, and the

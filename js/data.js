@@ -39,22 +39,23 @@ const ITEMS = {
   ammo_9:    {name:'9mm Rounds', type:'ammo', icon:'🔸', w:0.012, val:2, stack:40, desc:'Pistol & SMG food.'},
   ammo_12:   {name:'12g Shells', type:'ammo', icon:'🔻', w:0.045, val:5, stack:20, desc:'For the Pump Shotgun.'},
   ammo_762:  {name:'7.62 Rounds', type:'ammo', icon:'🔶', w:0.02, val:4, stack:40, desc:'Rifle rounds.'},
-  // --- meds ---
-  bandage:   {name:'Bandage', type:'med', icon:'🩹', w:0.1, val:35, stack:5, use:2.0, hp:5, stopBleed:true,
-              desc:'Stops bleeding. +5 HP.'},
-  medkit:    {name:'Field Medkit', type:'med', icon:'💊', w:0.6, val:130, use:4.0, hp:60, stopBleed:true,
-              desc:'Stops bleeding. +60 HP.'},
-  // --- food / drink ---
-  bread:     {name:'Stale Bread', type:'food', icon:'🍞', w:0.3, val:18, stack:3, use:1.5, energy:30,
-              desc:'+30 energy. Crunchy in the wrong way.'},
-  beans:     {name:'Canned Beans', type:'food', icon:'🥫', w:0.5, val:32, use:2.0, energy:55,
-              desc:'+55 energy. The extraction classic.'},
-  choc:      {name:'Chocolate Bar', type:'food', icon:'🍫', w:0.1, val:25, stack:4, use:1.0, energy:18,
-              desc:'+18 energy, fast.'},
-  water:     {name:'Water Bottle', type:'drink', icon:'💧', w:0.6, val:24, use:1.5, hyd:45,
-              desc:'+45 hydration.'},
-  soda:      {name:'Bunker Cola', type:'drink', icon:'🥤', w:0.4, val:20, stack:3, use:1.0, hyd:28, energy:6,
-              desc:'+28 hydration, +6 energy. Fizzy.'},
+  // --- meds (heal HP) ---
+  bandage:   {name:'Bandage', type:'med', icon:'🩹', w:0.1, val:35, stack:5, use:1.6, hp:25,
+              desc:'+25 HP.'},
+  medkit:    {name:'Field Medkit', type:'med', icon:'💊', w:0.6, val:130, use:3.5, hp:60,
+              desc:'+60 HP.'},
+  // --- food (small HP) ---
+  bread:     {name:'Stale Bread', type:'food', icon:'🍞', w:0.3, val:18, stack:3, use:1.5, hp:12,
+              desc:'+12 HP. Crunchy in the wrong way.'},
+  beans:     {name:'Canned Beans', type:'food', icon:'🥫', w:0.5, val:32, use:2.0, hp:28,
+              desc:'+28 HP. The extraction classic.'},
+  choc:      {name:'Chocolate Bar', type:'food', icon:'🍫', w:0.1, val:25, stack:4, use:1.0, hp:8,
+              desc:'+8 HP, fast.'},
+  // --- drink (recharge shield) ---
+  water:     {name:'Shield Cell', type:'drink', icon:'🔋', w:0.6, val:24, use:1.4, shield:40,
+              desc:'+40 shield. Snaps into your rig.'},
+  soda:      {name:'Bunker Cola', type:'drink', icon:'🥤', w:0.4, val:20, stack:3, use:1.0, shield:22,
+              desc:'+22 shield. Fizzy static.'},
   // --- junk / materials ---
   scrap:     {name:'Scrap Metal', type:'junk', icon:'🔩', w:0.5, val:15, stack:10,
               desc:'Base building material. Smash crate piles for more.'},
@@ -150,7 +151,7 @@ const ENEMY_DEFS = {
 const ZONE_DEFS = {
   outskirts:{name:'The Outskirts', tier:1, grass:['#36462f','#3d4d35'],
     scatter:{tree:0.020,bush:0.014,rock:0.004,crate:0.003}, crops:false, fences:3,
-    bld:{n:6, wMin:5,wMax:8, hMin:4,hMax:6},
+    bld:{n:6, wMin:8,wMax:13, hMin:6,hMax:10},
     contW:[['crate',55],['locker',20],['medbox',15],['weaponbox',10]],
     mats:[['scrap',20,1,2],['spoon',14,1,2],['bread',12,1,1],['soda',10,1,1],
           ['ammo_9',10,4,10],['tape',8,1,1],['cash',12,5,25]],
@@ -158,7 +159,7 @@ const ZONE_DEFS = {
     squadN:3, buff:{hp:1,dmg:1}},
   farm:{name:'Rotfield Farms', tier:1, grass:['#4a4d2e','#585c37'],
     scatter:{tree:0.008,bush:0.008,rock:0.003,crate:0.003}, crops:true, fences:9,
-    bld:{n:7, wMin:8,wMax:15, hMin:6,hMax:10}, // barns
+    bld:{n:7, wMin:11,wMax:20, hMin:8,hMax:14}, // big barns
     contW:[['crate',55],['locker',20],['medbox',15],['weaponbox',10]],
     mats:[['beans',18,1,1],['bread',16,1,2],['water',14,1,1],['choc',10,1,2],
           ['soda',10,1,1],['scrap',8,1,2],['cash',8,5,30]],
@@ -167,7 +168,7 @@ const ZONE_DEFS = {
     squadN:4, buff:{hp:1,dmg:1}},
   forest:{name:'Whispering Pines', tier:2, grass:['#2c4029','#33482f'],
     scatter:{tree:0.085,bush:0.030,rock:0.006,crate:0.001}, crops:false, fences:0,
-    bld:{n:3, wMin:5,wMax:7, hMin:4,hMax:6}, // cabins
+    bld:{n:4, wMin:7,wMax:11, hMin:6,hMax:9}, // lodges
     contW:[['crate',50],['medbox',25],['locker',15],['weaponbox',10]],
     mats:[['feather',20,1,2],['choc',12,1,2],['bandage',12,1,1],['water',10,1,1],
           ['figurine',4,1,1],['cash',8,10,40]],
@@ -176,7 +177,7 @@ const ZONE_DEFS = {
     squadN:5, buff:{hp:1.1,dmg:1.1}},
   town:{name:'Old Marrowtown', tier:2, grass:['#3d443a','#464d42'],
     scatter:{tree:0.006,bush:0.008,rock:0.003,crate:0.005}, crops:false, fences:4,
-    bld:{n:13, wMin:7,wMax:13, hMin:5,hMax:10},
+    bld:{n:13, wMin:9,wMax:17, hMin:7,hMax:13},
     contW:[['locker',35],['crate',30],['medbox',20],['weaponbox',15]],
     mats:[['cash',20,20,90],['watch',8,1,1],['figurine',5,1,1],['medkit',6,1,1],
           ['bandage',10,1,2],['soda',10,1,1],['wires',8,1,2],['goldegg',2,1,1]],
@@ -185,7 +186,7 @@ const ZONE_DEFS = {
     squadN:6, buff:{hp:1.15,dmg:1.1}},
   industrial:{name:'Rustworks Industrial', tier:3, grass:['#43413a','#4b4941'],
     scatter:{tree:0.004,bush:0.004,rock:0.008,crate:0.014}, crops:false, fences:5,
-    bld:{n:8, wMin:12,wMax:22, hMin:9,hMax:15}, // warehouses
+    bld:{n:8, wMin:15,wMax:28, hMin:11,hMax:19}, // sprawling warehouses
     contW:[['crate',35],['locker',30],['weaponbox',25],['medbox',10]],
     mats:[['scrap',22,2,4],['wires',18,1,3],['tape',12,1,2],['ammo_762',10,6,14],
           ['ammo_12',8,3,8],['grip',4,1,1],['cash',10,20,70]],
@@ -194,7 +195,7 @@ const ZONE_DEFS = {
     squadN:6, buff:{hp:1.3,dmg:1.2}},
   military:{name:'Fort Cinder Depot', tier:3, grass:['#3a4534','#424d3b'],
     scatter:{tree:0.006,bush:0.006,rock:0.006,crate:0.009}, crops:false, fences:7,
-    bld:{n:7, wMin:9,wMax:18, hMin:7,hMax:12},
+    bld:{n:7, wMin:12,wMax:24, hMin:9,hMax:16},
     contW:[['weaponbox',45],['locker',30],['medbox',15],['crate',10]],
     mats:[['ammo_9',16,10,24],['ammo_762',16,8,20],['ammo_12',12,4,10],
           ['silencer',5,1,1],['reddot',6,1,1],['grip',6,1,1],['medkit',6,1,1],

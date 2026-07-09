@@ -14,6 +14,8 @@ const mmCtx = mmCv.getContext('2d');
 const FOV_DEG = 110, VIS_RANGE = 480, NEAR_VIS = 150;
 const STORM_WARN = 390, STORM_HIT = 540, STORM_DPS = 8; // runs land in the 5-10 min window
 const ENEMY_CAP = 80;
+const SHIELD_MAX = 50, SHIELD_DELAY = 3.5, SHIELD_REGEN = 14; // regenerating buffer
+const GUNSHOT_NOISE_MUL = 2.0; // gunfire carries much farther than other noise
 const BASE_WEIGHT_CAP = 40;
 const PLAYER_R = 13;
 
@@ -69,6 +71,8 @@ function sfx(name){
     case 'buy':      tone(760,0.07,'sine',0.1); setTimeout(()=>tone(950,0.07,'sine',0.1),90); break;
     case 'siren':    tone(Math.floor(performance.now()/900)%2?780:590,0.35,'triangle',0.11); break;
     case 'emerge':   noiseHit(0.3,0.18,300); tone(90,0.4,'sawtooth',0.09,45); break;
+    case 'shieldup': tone(520,0.14,'sine',0.10,900); setTimeout(()=>tone(760,0.1,'sine',0.09),90); break;
+    case 'shieldbreak': noiseHit(0.18,0.2,3200); tone(880,0.16,'square',0.10,180); break;
     case 'chop':     noiseHit(0.08,0.22,900); tone(170,0.05,'square',0.08); break;
     case 'mine':     noiseHit(0.05,0.16,2400); tone(1100,0.04,'square',0.06); break;
     case 'break':    noiseHit(0.22,0.26,700); tone(120,0.12,'square',0.09,60); break;
@@ -156,8 +160,9 @@ function activeWeaponSlot(){
 function makePlayer(spawn){
   return {
     x:spawn.x, y:spawn.y, r:PLAYER_R,
-    aim:-Math.PI/2, hp:100, maxhp:100, stam:100, energy:100, hyd:100,
-    bleed:false, active: G.save.eq.g1?0:(G.save.eq.g2?1:2),
+    aim:-Math.PI/2, hp:100, maxhp:100, stam:100,
+    shield:SHIELD_MAX, shieldMax:SHIELD_MAX, shieldRegenT:0,
+    active: G.save.eq.g1?0:(G.save.eq.g2?1:2),
     fireCd:0, reloadT:0, switchT:0, heat:0, swingT:0, swingAnim:0, use:null,
     hurtT:0, stamDelay:0, walkPhase:0, moving:false, dead:false, speedNow:0,
   };
@@ -338,10 +343,7 @@ function playerSpeed(){
   let sp = 150 * totemEff('speedMul',1);
   const sprinting = keys['shift'] && P.stam>0.5 && P.moving && !P.use;
   if(sprinting) sp *= 1.55;
-  if(!RAID.isBase){
-    if(P.hyd<=25) sp *= 0.85;
-    if(calcWeight()>weightCap()) sp *= 0.62;
-  }
+  if(!RAID.isBase && calcWeight()>weightCap()) sp *= 0.62;
   if(P.use) sp *= 0.6;
   return {sp, sprinting};
 }
@@ -368,20 +370,14 @@ function updatePlayer(dt){
   if(sprinting){ P.stam=Math.max(0,P.stam-16*dt); P.stamDelay=0.8; }
   else{
     P.stamDelay=Math.max(0,P.stamDelay-dt);
-    if(P.stamDelay<=0){
-      let regen=13; if(!inBase && P.energy<=25) regen*=0.5;
-      P.stam=Math.min(100,P.stam+regen*dt);
-    }
+    if(P.stamDelay<=0) P.stam=Math.min(100,P.stam+13*dt);
   }
-  // survival meters tick only out in the field
-  if(!inBase){
-    P.energy = Math.max(0, P.energy - (0.14 + (sprinting?0.10:0))*dt);
-    P.hyd    = Math.max(0, P.hyd    - (0.18 + (sprinting?0.14:0))*dt);
-    if(P.energy<=0) damagePlayer(0.6*dt, 'starvation', true);
-    if(P.hyd<=0)    damagePlayer(1.0*dt, 'dehydration', true);
-    if(P.bleed)     damagePlayer(1.5*dt, 'bleeding out', true);
-    if(calcWeight()>weightCap() && P.moving) P.stam=Math.max(0,P.stam-5*dt);
-  }
+  // shield regenerates after a lull with no damage taken
+  P.shieldRegenT=Math.max(0,P.shieldRegenT-dt);
+  if(P.shieldRegenT<=0 && P.shield<P.shieldMax)
+    P.shield=Math.min(P.shieldMax, P.shield+SHIELD_REGEN*dt);
+  // encumbrance still burns stamina out in the field
+  if(!inBase && calcWeight()>weightCap() && P.moving) P.stam=Math.max(0,P.stam-5*dt);
   // timers
   P.fireCd=Math.max(0,P.fireCd-dt);
   P.switchT=Math.max(0,P.switchT-dt);
@@ -459,7 +455,6 @@ function tryAttack(){
   P.heat=Math.min(9, P.heat+gs.recoil);
   const moveAdd = P.moving ? (P.speedNow/230)*3 : 0;
   let spreadDeg = gs.spread + P.heat + moveAdd;
-  if(P.hyd<=25) spreadDeg*=1.4;
   const pellets=d.pellets||1;
   // bullets spawn at the body, not the muzzle — point-blank shots must connect
   const mx=P.x+Math.cos(P.aim)*6, my=P.y+Math.sin(P.aim)*6;
@@ -471,7 +466,7 @@ function tryAttack(){
   spawnPart(P.x+Math.cos(P.aim)*22,P.y+Math.sin(P.aim)*22,
             Math.cos(P.aim)*60,Math.sin(P.aim)*60,0.07,'#ffdf91',7,'flash');
   cam.shk=Math.min(7, cam.shk+gs.recoil*1.2);
-  addNoise(P.x,P.y,gs.noise,'player');
+  addNoise(P.x,P.y,gs.noise*GUNSHOT_NOISE_MUL,'player'); // gunfire draws a wide net
   sfx(gs.silenced?'shotS':(d.ammo==='ammo_12'?'boom':(d.ammo==='ammo_762'&&!d.auto?'rifle':'shot')));
   uiUpdateWeapon();
 }
@@ -547,8 +542,10 @@ function startUse(key, i, slot){
   if(RAID.isBase){ uiToast('You are rested — no need right now. (Try the bed if not.)',''); return; }
   const d=ITEMS[slot.id];
   if(!d.use) return;
-  if(d.type==='med' && !P.bleed && P.hp>=P.maxhp){ uiToast('Already at full health.',''); return; }
-  P.use={key, i, id:slot.id, t:0, dur:d.use, label:(d.type==='med'?'Using ':'Consuming ')+d.name};
+  if(d.hp && !d.shield && P.hp>=P.maxhp){ uiToast('Already at full health.',''); return; }
+  if(d.shield && !d.hp && P.shield>=P.shieldMax){ uiToast('Shield already full.',''); return; }
+  P.use={key, i, id:slot.id, t:0, dur:d.use,
+         label:(d.shield?'Charging ':d.type==='med'?'Using ':'Consuming ')+d.name};
 }
 function finishUse(){
   const u=P.use; P.use=null;
@@ -557,10 +554,8 @@ function finishUse(){
   if(!s || s.id!==u.id) return; // moved away mid-use
   const d=ITEMS[s.id];
   if(d.hp) P.hp=Math.min(P.maxhp, P.hp+d.hp);
-  if(d.stopBleed && P.bleed){ P.bleed=false; uiToast('Bleeding stopped.','good'); }
-  if(d.energy) P.energy=Math.min(100,P.energy+d.energy);
-  if(d.hyd) P.hyd=Math.min(100,P.hyd+d.hyd);
-  sfx(d.type==='med'?'heal':'eat');
+  if(d.shield) P.shield=Math.min(P.shieldMax, P.shield+d.shield);
+  sfx(d.shield?'shieldup':d.type==='med'?'heal':'eat');
   s.q--; if(s.q<=0) uiSetSlot(u.key,u.i,null);
   uiRefreshAll();
 }
@@ -652,8 +647,8 @@ function updateBaseInteract(){
     keys._e=false;
     if(best.type==='exit'){ deploy(); return; }
     if(best.type==='bed'){
-      P.hp=P.maxhp; P.stam=100; P.energy=100; P.hyd=100; P.bleed=false;
-      sfx('heal'); uiToast('You rest. All vitals restored.','good');
+      P.hp=P.maxhp; P.stam=100; P.shield=P.shieldMax;
+      sfx('heal'); uiToast('You rest. HP, stamina and shield restored.','good');
       return;
     }
     uiOpenStation(best); sfx('pickup');
@@ -704,12 +699,19 @@ function updateExtraction(dt){
 // -------- damage ------------------------------------------------------------
 function damagePlayer(dmg, src, env){
   if(!P || P.dead || RAID.over || RAID.isBase) return;
-  P.hp-=dmg;
+  P.shieldRegenT=SHIELD_DELAY; // any hit stalls shield regen
+  // shield soaks the hit first, overflow bleeds into HP
+  const hadShield=P.shield>0;
+  if(P.shield>0){
+    const soak=Math.min(P.shield,dmg);
+    P.shield-=soak; dmg-=soak;
+  }
+  if(dmg>0) P.hp-=dmg;
   if(!env){
     P.hurtT=0.35; cam.shk=Math.min(9,cam.shk+3);
-    if(dmg>=8 && !P.bleed && Math.random()<0.3){ P.bleed=true; uiToast('🩸 You are bleeding! Use a bandage (F).','bad'); }
-    sfx('hurt');
-    for(let i=0;i<5;i++) spawnPart(P.x,P.y,(Math.random()-0.5)*160,(Math.random()-0.5)*160,0.5,'#d97757',3);
+    sfx(hadShield && P.shield<=0 && dmg>0 ? 'shieldbreak' : 'hurt');
+    const col = (hadShield && P.shield>0) ? '#6fb6e0' : '#d97757';
+    for(let i=0;i<5;i++) spawnPart(P.x,P.y,(Math.random()-0.5)*160,(Math.random()-0.5)*160,0.5,col,3);
   }
   if(P.hp<=0){ P.hp=0; P.dead=true; RAID.over=true; handlePlayerDeath(src); }
 }

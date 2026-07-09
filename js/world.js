@@ -79,41 +79,69 @@ function genWorld(raidSeed){
 
   // ---------------- buildings, sized & counted per zone ----------------
   const buildings = [];
+  // recursively split a room's interior with walls, punching a door in each
+  // new wall so every room stays reachable. Returns the leaf rooms.
+  const carveRooms=(ix,iy,iw,ih)=>{
+    const rooms=[{x:ix,y:iy,w:iw,h:ih}];
+    // number of splits scales with floor area
+    let splits = Math.floor((iw*ih)/70);
+    splits = Math.min(6, splits);
+    for(let s=0;s<splits;s++){
+      rooms.sort((a,b)=>b.w*b.h-a.w*a.h);
+      const rm=rooms.shift();
+      const canV=rm.w>=9, canH=rm.h>=9;
+      if(!canV && !canH){ rooms.push(rm); break; }
+      const vert = canV && (!canH || (rm.w>=rm.h));
+      if(vert){
+        const cut=rm.x+rri(rng,4,rm.w-4);          // interior wall column
+        for(let y=rm.y;y<rm.y+rm.h;y++) set(cut,y,T.WALL);
+        const doors=rm.h>=8?2:1;
+        for(let k=0;k<doors;k++) set(cut, rri(rng,rm.y,rm.y+rm.h-1), T.FLOOR);
+        rooms.push({x:rm.x, y:rm.y, w:cut-rm.x, h:rm.h});
+        rooms.push({x:cut+1, y:rm.y, w:rm.x+rm.w-cut-1, h:rm.h});
+      }else{
+        const cut=rm.y+rri(rng,4,rm.h-4);          // interior wall row
+        for(let x=rm.x;x<rm.x+rm.w;x++) set(x,cut,T.WALL);
+        const doors=rm.w>=8?2:1;
+        for(let k=0;k<doors;k++) set(rri(rng,rm.x,rm.x+rm.w-1), cut, T.FLOOR);
+        rooms.push({x:rm.x, y:rm.y, w:rm.w, h:cut-rm.y});
+        rooms.push({x:rm.x, y:cut+1, w:rm.w, h:rm.y+rm.h-cut-1});
+      }
+    }
+    return rooms;
+  };
   const carveBuilding=(bx,by,bw,bh)=>{
+    // solid shell + floor
     for(let y=by;y<by+bh;y++) for(let x=bx;x<bx+bw;x++)
       set(x,y, (y===by||y===by+bh-1||x===bx||x===bx+bw-1) ? T.WALL : T.FLOOR);
-    // exterior doors — big buildings get more
-    const doors = 1+Math.round((bw+bh)/14);
+    // interior rooms with connecting doors
+    carveRooms(bx+1, by+1, bw-2, bh-2);
+    // exterior doors — big buildings get more; clear the tile just inside so
+    // the door never opens straight into an interior room wall
+    const doors = 1+Math.round((bw+bh)/12);
     for(let d=0;d<doors;d++){
-      const side = rri(rng,0,3);
-      if(side===0) set(rri(rng,bx+1,bx+bw-2), by, T.FLOOR);
-      if(side===1) set(rri(rng,bx+1,bx+bw-2), by+bh-1, T.FLOOR);
-      if(side===2) set(bx, rri(rng,by+1,by+bh-2), T.FLOOR);
-      if(side===3) set(bx+bw-1, rri(rng,by+1,by+bh-2), T.FLOOR);
-    }
-    // interior partitions for warehouses
-    if(bw>=12){
-      const px=bx+rri(rng,(bw*0.35)|0,(bw*0.65)|0);
-      for(let y=by+1;y<by+bh-1;y++) set(px,y,T.WALL);
-      set(px, rri(rng,by+1,by+bh-2), T.FLOOR);
-      set(px, rri(rng,by+1,by+bh-2), T.FLOOR);
-    }
-    if(bh>=10){
-      const py=by+rri(rng,(bh*0.35)|0,(bh*0.65)|0);
-      for(let x=bx+1;x<bx+bw-1;x++) if(at(x,py)===T.FLOOR||at(x,py)===T.GRASS) set(x,py,T.WALL);
-      set(rri(rng,bx+1,bx+bw-2), py, T.FLOOR);
-      set(rri(rng,bx+1,bx+bw-2), py, T.FLOOR);
+      const side=rri(rng,0,3);
+      let dx,dy,ix,iy;
+      if(side===0){ dx=rri(rng,bx+1,bx+bw-2); dy=by;      ix=dx; iy=by+1; }
+      else if(side===1){ dx=rri(rng,bx+1,bx+bw-2); dy=by+bh-1; ix=dx; iy=by+bh-2; }
+      else if(side===2){ dx=bx; dy=rri(rng,by+1,by+bh-2);  ix=bx+1; iy=dy; }
+      else{ dx=bx+bw-1; dy=rri(rng,by+1,by+bh-2);          ix=bx+bw-2; iy=dy; }
+      set(dx,dy,T.FLOOR); set(ix,iy,T.FLOOR);
     }
     buildings.push({x:bx,y:by,w:bw,h:bh});
   };
   for(const z of zones){
     const B=z.def.bld;
     let placed=0, tries=0;
-    while(placed<B.n && tries++<900){
-      const bw=rri(rng,B.wMin,B.wMax), bh=rri(rng,B.hMin,B.hMax);
+    while(placed<B.n && tries++<1100){
+      // ~30% of buildings roll oversized — sprawling, multi-room structures
+      const large=rng()<0.3;
+      const bw=large?rri(rng,B.wMax,B.wMax+9):rri(rng,B.wMin,B.wMax);
+      const bh=large?rri(rng,B.hMax,B.hMax+6):rri(rng,B.hMin,B.hMax);
+      if(bw>=MW-12||bh>=MH-12) continue;
       const bx=rri(rng,5,MW-6-bw), by=rri(rng,5,MH-6-bh);
       if(zoneAtT(bx+((bw/2)|0), by+((bh/2)|0))!==z) continue;
-      if(Math.hypot(bx+bw/2-spawnT.x, by+bh/2-spawnT.y)<18) continue; // spawn clearing
+      if(Math.hypot(bx+bw/2-spawnT.x, by+bh/2-spawnT.y)<20) continue; // spawn clearing
       let ok=true;
       for(let y=by-2;y<by+bh+2 && ok;y++) for(let x=bx-2;x<bx+bw+2 && ok;x++)
         if(at(x,y)!==T.GRASS) ok=false;
@@ -159,12 +187,12 @@ function genWorld(raidSeed){
     {x:14, y:(MH*0.55)|0, name:'River Crossing'},
     {x:MW-15, y:(MH*0.5)|0, name:'East Gate'},
   ];
+  // no extraction near the drop — you must travel to reach one
   const extractions=[];
   for(const s of exSpots){
     clear(s.x,s.y,4);
     extractions.push({x:s.x*TILE, y:s.y*TILE, r:76, name:s.name, time:4});
   }
-  extractions.push({x:playerSpawn.x, y:playerSpawn.y+2*TILE, r:60, name:'Bunker Hatch', time:6});
 
   // ============ per-raid: loot containers (zone flavored) ============
   const containers = [];
@@ -271,35 +299,25 @@ function snapToWalkable(world, px, py){
 }
 
 // ---------------------------------------------------------------------------
-// the walkable home base: hatch room up top, main hall, med bay left,
-// workshop (all the benches) bottom-right
+// the walkable home base — one open room, every station along the walls
 // ---------------------------------------------------------------------------
 function genBaseWorld(){
-  const w=34, h=26;
+  const w=30, h=20;
   const t=new Uint8Array(w*h).fill(T.WALL);
-  const carve=(x1,y1,x2,y2,tt)=>{
-    for(let y=y1;y<=y2;y++) for(let x=x1;x<=x2;x++) t[y*w+x]=tt;
-  };
-  carve(14,2,19,5,T.FLOOR);   // hatch room
-  carve(15,5,18,7,T.FLOOR);   // corridor down
-  carve(5,7,28,15,T.FLOOR);   // main hall
-  carve(8,15,9,17,T.FLOOR);   // corridor to med bay
-  carve(5,17,12,22,T.ROAD);   // med bay (concrete floor)
-  carve(21,15,22,17,T.FLOOR); // corridor to workshop
-  carve(17,17,28,22,T.ROAD);  // workshop (concrete floor)
+  for(let y=2;y<h-2;y++) for(let x=2;x<w-2;x++) t[y*w+x]=T.FLOOR; // single hall
   const S=TILE;
   const stations=[
-    {type:'exit',    x:16.9*S, y:3.2*S,  label:'Deploy to Ground Zero'},
-    {type:'stash',   x:7*S,    y:8.8*S,  label:'Open Stash'},
-    {type:'bed',     x:7*S,    y:13.6*S, label:'Rest'},
-    {type:'trader',  x:26.5*S, y:8.8*S,  label:'Trade with Boris'},
-    {type:'medbay',  x:8.5*S,  y:20*S,   label:BENCH_DEFS.medbay.label},
-    {type:'upgrade', x:19.5*S, y:20*S,   label:'Use General Workbench'},
-    {type:'gunsmith',x:24*S,   y:18.5*S, label:BENCH_DEFS.gunsmith.label},
-    {type:'equip',   x:26.8*S, y:21*S,   label:BENCH_DEFS.equip.label},
+    {type:'exit',    x:15*S,   y:3.2*S,  label:'Deploy to Ground Zero'},
+    {type:'stash',   x:4.2*S,  y:5*S,    label:'Open Stash'},
+    {type:'bed',     x:4.2*S,  y:13*S,   label:'Rest'},
+    {type:'trader',  x:25.4*S, y:5*S,    label:'Trade with Boris'},
+    {type:'medbay',  x:25.4*S, y:13*S,   label:BENCH_DEFS.medbay.label},
+    {type:'upgrade', x:11*S,   y:16*S,   label:'Use General Workbench'},
+    {type:'gunsmith',x:16*S,   y:16.4*S, label:BENCH_DEFS.gunsmith.label},
+    {type:'equip',   x:21*S,   y:16*S,   label:BENCH_DEFS.equip.label},
   ];
   return {t, w, h, stations, containers:[], extractions:[], enemySpawns:[],
-          playerSpawn:{x:17*S, y:11*S}};
+          playerSpawn:{x:15*S, y:9.5*S}};
 }
 
 function rollLoot(table, rng){
