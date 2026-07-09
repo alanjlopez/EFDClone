@@ -83,7 +83,7 @@ function quickTransfer(key,i){
   }
   let target=null;
   if(G.mode==='raid'){
-    if(key==='loot') target='inv';
+    if(key==='loot'){ startLoot(i,null,null); return; } // taking items takes time
     else if(LOOT && key==='inv') target='loot';
   }else if(G.mode==='base' && STATION && STATION.type==='stash'){
     if(key==='inv') target='stash';
@@ -245,7 +245,11 @@ document.addEventListener('mouseup',e=>{
   const el=document.elementFromPoint(e.clientX,e.clientY);
   const slot=el && el.closest ? el.closest('.slot') : null;
   if(slot){
-    moveSlot(drag.key,drag.i, slot.dataset.key, +slot.dataset.i);
+    // pulling out of a raid container channels; everything else is instant
+    if(G.mode==='raid' && drag.key==='loot' && slot.dataset.key!=='loot')
+      startLoot(drag.i, slot.dataset.key, +slot.dataset.i);
+    else
+      moveSlot(drag.key,drag.i, slot.dataset.key, +slot.dataset.i);
   }else if(G.mode==='raid' && el===cvs && drag.key!=='loot'){
     const s=uiGetSlot(drag.key,drag.i);
     if(s){
@@ -401,6 +405,7 @@ function uiOpenLoot(c){
   uiRefreshAll();
 }
 function uiCloseLoot(){
+  cancelLoot(); // walking away mid-grab drops the channel
   LOOT=null;
   $('lootpanel').style.display='none';
 }
@@ -412,15 +417,12 @@ function uiCloseAllPanels(){
   $('invpanel').style.display='none';
 }
 $('loottake').addEventListener('click',()=>{
-  if(!LOOT) return;
-  for(let i=0;i<LOOT.items.length;i++){
-    const s=LOOT.items[i];
-    if(!s) continue;
-    LOOT.items[i]=null;
-    const left=invAddItem(G.save.inv,s);
-    if(left){ LOOT.items[i]=left; uiToast('Backpack full!','bad'); break; }
-  }
-  sfx('pickup'); uiRefreshAll();
+  if(!LOOT || P.use) return;
+  // loots one item at a time, each with its own channel
+  LOOTALL=true;
+  for(let i=0;i<LOOT.items.length;i++)
+    if(LOOT.items[i]){ startLoot(i,null,null); return; }
+  LOOTALL=false;
 });
 
 // ---------------------------------------------------------------------------

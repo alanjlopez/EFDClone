@@ -6,27 +6,30 @@
 // ---------- items -----------------------------------------------------------
 // type: gun | melee | ammo | food | drink | med | junk | valuable | feather
 //       | att | totem | cash
+// ONE-SHOT META (this branch): every gun kills in a single hit — dmg is set
+// beyond any buffed zombie's hp even through armor and range falloff. The
+// balance lives in magazine size, fire rate, reload, spread and noise.
 const ITEMS = {
-  // --- guns (dmg per bullet, rpm, spread deg, recoil deg/shot, noise px) ---
-  rustpistol:{name:'Rust Pistol', type:'gun', icon:'⚙️', w:0.5, val:0, dmg:8, rpm:280, auto:false,
-              mag:10, reload:1.3, spread:4.5, recoil:1.5, ammo:null, inf:true, vel:850, range:440, noise:440,
-              slots:[], desc:'Bunker-issue sidearm. Forges its own rounds — unlimited ammo, underwhelming ' +
-              'stopping power. Never leaves you, even in death.'},
-  makarov:   {name:'PM Makarov', type:'gun', icon:'🔫', w:0.8, val:140, dmg:13, rpm:330, auto:false,
-              mag:8,  reload:1.5, spread:3.2, recoil:1.6, ammo:'ammo_9', vel:920, range:520, noise:460,
-              slots:['muzzle','optic'], desc:'A proper sidearm. Reliable, humble.'},
-  scrapsmg:  {name:'Scrap SMG', type:'gun', icon:'🪛', w:2.2, val:320, dmg:8, rpm:640, auto:true,
-              mag:24, reload:2.2, spread:6.5, recoil:0.9, ammo:'ammo_9', vel:880, range:420, noise:500,
-              slots:['muzzle','optic','grip'], desc:'Welded together from bunker pipes. Sprays.'},
-  pumpgun:   {name:'Pump Shotgun', type:'gun', icon:'🔩', w:3.2, val:390, dmg:7, pellets:6, rpm:65, auto:false,
-              mag:5,  reload:2.8, spread:9, recoil:5, ammo:'ammo_12', vel:820, range:300, noise:640,
-              slots:['muzzle','grip'], desc:'Devastating up close. Politely useless at range.'},
-  huntrifle: {name:'Hunting Rifle', type:'gun', icon:'🎯', w:3.5, val:540, dmg:48, rpm:45, auto:false,
-              mag:4,  reload:2.6, spread:0.8, recoil:4, ammo:'ammo_762', vel:1400, range:950, noise:720,
-              slots:['muzzle','optic'], desc:'One shot, one kill.'},
-  akduckov:  {name:'AK Rustov', type:'gun', icon:'💥', w:3.6, val:820, dmg:15, rpm:480, auto:true,
-              mag:30, reload:2.4, spread:4.5, recoil:1.3, ammo:'ammo_762', vel:1100, range:640, noise:660,
-              slots:['muzzle','optic','grip'], desc:'The classic. Never jams, never forgives.'},
+  // --- guns (one-shot dmg, rpm, spread deg, recoil deg/shot, noise px) ---
+  rustpistol:{name:'Rust Pistol', type:'gun', icon:'⚙️', w:0.5, val:0, dmg:999, rpm:280, auto:false,
+              mag:4,  reload:1.3, spread:4.5, recoil:1.5, ammo:null, inf:true, vel:850, range:440, noise:440,
+              slots:[], desc:'Bunker-issue sidearm. Forges its own rounds — four in the mag, then a ' +
+              'long lonely reload. Never leaves you, even in death.'},
+  makarov:   {name:'PM Makarov', type:'gun', icon:'🔫', w:0.8, val:140, dmg:999, rpm:330, auto:false,
+              mag:5,  reload:1.5, spread:3.2, recoil:1.6, ammo:'ammo_9', vel:920, range:520, noise:460,
+              slots:['muzzle','optic'], desc:'A proper sidearm. Five rounds, five bodies — if you aim.'},
+  scrapsmg:  {name:'Scrap SMG', type:'gun', icon:'🪛', w:2.2, val:320, dmg:999, rpm:640, auto:true,
+              mag:10, reload:2.2, spread:6.5, recoil:0.9, ammo:'ammo_9', vel:880, range:420, noise:500,
+              slots:['muzzle','optic','grip'], desc:'Welded together from bunker pipes. Ten rounds go fast.'},
+  pumpgun:   {name:'Pump Shotgun', type:'gun', icon:'🔩', w:3.2, val:390, dmg:999, pellets:6, rpm:65, auto:false,
+              mag:2,  reload:2.8, spread:9, recoil:5, ammo:'ammo_12', vel:820, range:300, noise:640,
+              slots:['muzzle','grip'], desc:'Two shells. Each pellet drops a zombie — crowd eraser up close.'},
+  huntrifle: {name:'Hunting Rifle', type:'gun', icon:'🎯', w:3.5, val:540, dmg:999, rpm:45, auto:false,
+              mag:2,  reload:2.6, spread:0.8, recoil:4, ammo:'ammo_762', vel:1400, range:950, noise:720,
+              slots:['muzzle','optic'], desc:'One shot, one kill. Two, then you reload.'},
+  akduckov:  {name:'AK Rustov', type:'gun', icon:'💥', w:3.6, val:820, dmg:999, rpm:480, auto:true,
+              mag:12, reload:2.4, spread:4.5, recoil:1.3, ammo:'ammo_762', vel:1100, range:640, noise:660,
+              slots:['muzzle','optic','grip'], desc:'The classic. A dozen guaranteed kills per mag.'},
   // --- melee (dmg, rate swings/s, range px, arc deg, stam cost) ---
   cleaver:   {name:'Rusty Cleaver', type:'melee', icon:'🔪', w:0.7, val:60, dmg:24, rate:2.1, mrange:56,
               arc:100, stam:12, desc:'Found in the bunker kitchen. Still sharp-ish.'},

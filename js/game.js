@@ -12,7 +12,8 @@ const mmCtx = mmCv.getContext('2d');
 
 // tuning ---------------------------------------------------------------------
 const FOV_DEG = 110, VIS_RANGE = 480, NEAR_VIS = 150;
-const STORM_WARN = 420, STORM_HIT = 570, STORM_DPS = 8; // longer raids on the big map
+const STORM_WARN = 390, STORM_HIT = 540, STORM_DPS = 8; // runs land in the 5-10 min window
+const ENEMY_CAP = 80;
 const BASE_WEIGHT_CAP = 40;
 const PLAYER_R = 13;
 
@@ -67,6 +68,7 @@ function sfx(name){
     case 'gacha':    tone(300,0.1,'sine',0.12,600); setTimeout(()=>tone(600,0.25,'sine',0.14,1200),150); break;
     case 'buy':      tone(760,0.07,'sine',0.1); setTimeout(()=>tone(950,0.07,'sine',0.1),90); break;
     case 'siren':    tone(Math.floor(performance.now()/900)%2?780:590,0.35,'triangle',0.11); break;
+    case 'emerge':   noiseHit(0.3,0.18,300); tone(90,0.4,'sawtooth',0.09,45); break;
     case 'chop':     noiseHit(0.08,0.22,900); tone(170,0.05,'square',0.08); break;
     case 'mine':     noiseHit(0.05,0.16,2400); tone(1100,0.04,'square',0.06); break;
     case 'break':    noiseHit(0.22,0.26,700); tone(120,0.12,'square',0.09,60); break;
@@ -174,7 +176,7 @@ function startRaidState(){
     containers: world.containers,
     time: 0, storm: 'none', awareness:'hidden', curZone:null,
     weather: rweighted(Math.random, WEATHERS)[0],
-    extractZone: null, extractT: 0, alarmT: 0,
+    extractZone: null, extractT: 0, alarmT: 0, spawnT: 8,
     nodeHp: new Map(), // damaged-but-standing resource nodes
     kills: 0, over: false,
   };
@@ -242,7 +244,7 @@ function updateRaid(dt){
   }
   updatePlayer(dt);
   // extraction runs before the AI so its alarm noise is heard this same frame
-  if(!RAID.isBase) updateExtraction(dt);
+  if(!RAID.isBase){ updateExtraction(dt); updateSpawner(dt); }
   for(const e of RAID.enemies) updateEnemy(e, dt);
   RAID.enemies = RAID.enemies.filter(e=>e.hp>0);
   updateBullets(dt);
@@ -270,6 +272,50 @@ function updateAwareness(){
     }else if(e.state==='investigate' && aw==='hidden') aw='search';
   }
   RAID.awareness=aw;
+}
+
+// ---------------------------------------------------------------------------
+// the ground spawner — zombies claw out of the earth around the player.
+// A very slow climb: one every ~9s at raid start, one every ~2.2s by minute 8.
+// The extraction alarm cranks the rate way up.
+// ---------------------------------------------------------------------------
+function spawnInterval(){
+  const ramp=clamp(RAID.time/480, 0, 1);
+  let iv=lerp(9, 2.2, ramp);
+  if(RAID.extractZone) iv*=0.35;
+  return iv;
+}
+function updateSpawner(dt){
+  RAID.spawnT-=dt;
+  if(RAID.spawnT>0) return;
+  RAID.spawnT=spawnInterval()*(0.7+Math.random()*0.6);
+  if(RAID.enemies.length>=ENEMY_CAP) return;
+  spawnEmergingZombie();
+}
+function spawnEmergingZombie(){
+  const world=RAID.world;
+  for(let k=0;k<30;k++){
+    const a=Math.random()*Math.PI*2, d=350+Math.random()*520;
+    const x=P.x+Math.cos(a)*d, y=P.y+Math.sin(a)*d;
+    const tt=tileAt(world,x,y);
+    if(tt!==T.GRASS && tt!==T.ROAD && tt!==T.BUSH) continue; // no bursting through floors
+    const z=zoneAt(world,x,y)||world.zones[0];
+    const squad=z.def.squads[(Math.random()*z.def.squads.length)|0];
+    const type=squad[(Math.random()*squad.length)|0];
+    const def=ENEMY_DEFS[type];
+    const hp=Math.round(def.hp*z.def.buff.hp);
+    RAID.enemies.push({
+      type, def, x, y, r:def.r, hp, maxhp:hp, dmgMul:z.def.buff.dmg,
+      dir:Math.random()*7, state:'emerge', emergeT:1.2, stateT:0,
+      home:{x,y}, tgt:null, lastSeen:null, noLosT:0,
+      fireCd:0, burstLeft:(def.atk.burst||1), pauseT:0, strafeDir:1, strafeT:0,
+      stuckT:0, avoidA:0, hurtT:0,
+    });
+    for(let i=0;i<8;i++)
+      spawnPart(x,y+4,(Math.random()-0.5)*160,-(20+Math.random()*110),0.7,'#5a4a30',3.5);
+    if(dist2(P.x,P.y,x,y)<800*800) sfx('emerge');
+    return;
+  }
 }
 
 function updateStorm(dt){
@@ -506,6 +552,7 @@ function startUse(key, i, slot){
 }
 function finishUse(){
   const u=P.use; P.use=null;
+  if(u.kind==='loot'){ finishLoot(u); return; }
   const s=uiGetSlot(u.key,u.i);
   if(!s || s.id!==u.id) return; // moved away mid-use
   const d=ITEMS[s.id];
@@ -516,6 +563,41 @@ function finishUse(){
   sfx(d.type==='med'?'heal':'eat');
   s.q--; if(s.q<=0) uiSetSlot(u.key,u.i,null);
   uiRefreshAll();
+}
+
+// -------- looting takes time (a small channel per item) ----------------------
+let LOOTALL=false;
+function lootDur(s){
+  const d=ITEMS[s.id];
+  return 0.25 + Math.min(0.5, (d.w||0)*(s.q||1)*0.08);
+}
+// tk/ti null → auto-place into the backpack
+function startLoot(fi, tk, ti){
+  if(P.use || P.dead || !uiLootOpen()) return;
+  const s=uiGetSlot('loot',fi); if(!s) return;
+  P.use={kind:'loot', fi, tk, ti, id:s.id, t:0, dur:lootDur(s),
+         label:'Looting '+ITEMS[s.id].name+'…'};
+}
+function finishLoot(u){
+  const s=uiGetSlot('loot',u.fi);
+  if(!s || s.id!==u.id || !uiLootOpen()){ LOOTALL=false; return; }
+  if(u.tk!=null){
+    moveSlot('loot',u.fi,u.tk,u.ti);
+  }else{
+    uiSetSlot('loot',u.fi,null);
+    const left=invAddItem(G.save.inv,s);
+    if(left){ uiSetSlot('loot',u.fi,left); uiToast('No room!','bad'); LOOTALL=false; }
+  }
+  sfx('pickup'); uiRefreshAll();
+  if(LOOTALL && uiLootOpen()){
+    const items=uiLootContainer().items;
+    for(let i=0;i<items.length;i++) if(items[i]){ startLoot(i,null,null); return; }
+    LOOTALL=false;
+  }
+}
+function cancelLoot(){
+  if(P && P.use && P.use.kind==='loot') P.use=null;
+  LOOTALL=false;
 }
 function quickBandage(){
   if(P.use||P.dead||RAID.isBase) return;
@@ -715,6 +797,19 @@ function enemyMove(e, tx, ty, speed, dt){
 function lerp2Angle(a,b,t){ return a+angDiff(a,b)*Math.min(1,t); }
 
 function updateEnemy(e, dt){
+  // still clawing out of the dirt — helpless until fully risen
+  if(e.emergeT>0){
+    e.emergeT-=dt;
+    if(Math.random()<dt*9)
+      spawnPart(e.x,e.y+6,(Math.random()-0.5)*80,-(20+Math.random()*60),0.5,'#5a4a30',3);
+    if(e.emergeT<=0 && e.state==='emerge'){
+      if(Math.random()<0.6){ // most rise with a hunch about where you are
+        e.state='investigate'; e.stateT=0;
+        e.tgt={x:P.x+(Math.random()-0.5)*180, y:P.y+(Math.random()-0.5)*180};
+      }else{ e.state='patrol'; e.stateT=0; }
+    }
+    return;
+  }
   e.stateT+=dt; e.fireCd=Math.max(0,e.fireCd-dt); e.pauseT=Math.max(0,e.pauseT-dt);
   e.hurtT=Math.max(0,e.hurtT-dt);
   // hearing
@@ -1103,11 +1198,20 @@ function drawPlayer(){
 
 function drawZombie(e){
   const d=e.def;
+  const emerging=e.emergeT>0;
+  const ep=emerging?1-e.emergeT/1.2:1;
+  if(emerging){ // disturbed earth it's climbing out of
+    ctx.fillStyle='#4a3c28';
+    ctx.beginPath(); ctx.ellipse(e.x,e.y+5,e.r+7,e.r*0.55,0,0,7); ctx.fill();
+    ctx.fillStyle='#382d1e';
+    ctx.beginPath(); ctx.ellipse(e.x,e.y+5,e.r+2,e.r*0.35,0,0,7); ctx.fill();
+  }
   // shadow (not rotated)
   ctx.fillStyle='rgba(0,0,0,0.3)';
   ctx.beginPath(); ctx.ellipse(e.x,e.y+8,e.r,e.r*0.45,0,0,7); ctx.fill();
   ctx.save();
   ctx.translate(e.x,e.y);
+  if(emerging) ctx.scale(0.6+0.4*ep, 0.25+0.75*ep); // rising out of the ground
   ctx.rotate(e.dir);
   if(e.hurtT>0){ ctx.filter='brightness(1.9)'; }
   const shamble=Math.sin(performance.now()/220 + e.home.x)*0.12;
@@ -1154,6 +1258,7 @@ function drawZombie(e){
     ctx.fillStyle='#000a'; ctx.fillRect(e.x-14,e.y-e.r-11,28,4);
     ctx.fillStyle='#e05252'; ctx.fillRect(e.x-14,e.y-e.r-11,28*(e.hp/e.maxhp),4);
   }
+  if(emerging){ ctx.textAlign='left'; return; } // no awareness icon mid-dirt
   // awareness icon: ! spotted you · ? searching · 💤 oblivious
   ctx.textAlign='center';
   if(e.state==='combat'){

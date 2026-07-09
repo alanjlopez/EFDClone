@@ -222,10 +222,13 @@ function genWorld(raidSeed){
   }
 
   // ============ per-raid: zombie squads, composition & buffs per zone ============
+  // only half the usual squads pre-placed — the rest crawl out of the ground
+  // over the course of the run (see game.js spawner)
   const enemySpawns = [];
   for(const z of zones){
+    const squadTarget=Math.ceil(z.def.squadN/2);
     let sq=0, stries=0;
-    while(sq<z.def.squadN && stries++<400){
+    while(sq<squadTarget && stries++<400){
       const x=rri(lrng,8,MW-8), y=rri(lrng,8,MH-8);
       if(zoneAtT(x,y)!==z) continue;
       const px=x*TILE, py=y*TILE;
