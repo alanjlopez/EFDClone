@@ -10,11 +10,17 @@
 > - **Vitals are just HP, Shield and Stamina** — no bleeding, hunger or thirst.
 >   Shield soaks damage before HP and regenerates after a lull; meds/food heal
 >   HP, drink/cells recharge shield.
-> - **Bigger buildings**, with ~30% rolling oversized into multi-room structures
->   partitioned by interior walls and connected by doorways.
+> - **Buildings vary by zone color**: 🟢 green (tier 1) = small buildings; 🟡
+>   yellow (tier 2) = medium buildings, more & faster-spawning enemies; 🔴 red
+>   (tier 3) = ONE very large multi-room building, the most (and hardest)
+>   enemies, and a higher chance of rare loot. Big buildings are partitioned
+>   into rooms joined by doorways.
+> - **~126 zombies pre-placed at the drop**, scaled by zone (green ~12/zone,
+>   yellow ~18, red ~25); the ground spawner then tops the map up, faster in
+>   deeper zones.
 > - **Gunshots carry ~2× farther**, pulling zombies from a wide radius.
-> - **No extraction near the drop** — you must travel to one of four remote
->   exits.
+> - **No extraction near the drop** — travel to one of four remote exits, then
+>   **hold it for 75 seconds** while the alarm draws the horde.
 > - **The bunker is a single open room** with every station along the walls.
 
 A 2D, top-down, single-player **extraction looter-shooter prototype** inspired by

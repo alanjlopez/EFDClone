@@ -13,7 +13,7 @@ const mmCtx = mmCv.getContext('2d');
 // tuning ---------------------------------------------------------------------
 const FOV_DEG = 110, VIS_RANGE = 480, NEAR_VIS = 150;
 const STORM_WARN = 390, STORM_HIT = 540, STORM_DPS = 8; // runs land in the 5-10 min window
-const ENEMY_CAP = 80;
+const ENEMY_CAP = 200; // pre-placed population is large now; keep the spawner alive
 const SHIELD_MAX = 50, SHIELD_DELAY = 3.5, SHIELD_REGEN = 14; // regenerating buffer
 const GUNSHOT_NOISE_MUL = 2.0; // gunfire carries much farther than other noise
 const BASE_WEIGHT_CAP = 40;
@@ -286,7 +286,9 @@ function updateAwareness(){
 // ---------------------------------------------------------------------------
 function spawnInterval(){
   const ramp=clamp(RAID.time/480, 0, 1);
-  let iv=lerp(7.5, 1.8, ramp);
+  let iv=lerp(7, 1.6, ramp);
+  const z=zoneAt(RAID.world, P.x, P.y);
+  if(z) iv*=z.def.spawnMul; // yellow/red zones spawn faster
   if(RAID.extractZone) iv*=0.35;
   return iv;
 }

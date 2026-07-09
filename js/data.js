@@ -144,66 +144,76 @@ const ENEMY_DEFS = {
             groan:'A wall of rot. Do not let it corner you.'},
 };
 // ---------- zones -------------------------------------------------------------
-// The map is carved into Voronoi zones. Difficulty (tier) rises with distance
-// from the spawn. Each zone brings its own terrain, building sizes, signature
-// materials (mats: extra loot rolled into every container) and zombie squads.
-// scatter values are per-grass-tile probabilities; buff applies to zombies.
+// The map is carved into Voronoi zones, tiered by distance from the spawn and
+// color-coded on the HUD: GREEN (tier 1) → YELLOW (tier 2) → RED (tier 3).
+//   green  : smaller buildings, base enemy density, base spawn rate
+//   yellow : medium buildings, more enemies, faster in-zone spawn rate
+//   red    : ONE very large building, most enemies, rare loot & harder foes
+// Fields: bld sizes (giant:true → a single oversized structure), startE = how
+// many zombies pre-placed in this zone, spawnMul = in-zone ground-spawn speed
+// (lower = faster), rare = extra rare-loot roll in every container.
 const ZONE_DEFS = {
+  // ---- GREEN / tier 1 : small buildings ----
   outskirts:{name:'The Outskirts', tier:1, grass:['#36462f','#3d4d35'],
     scatter:{tree:0.020,bush:0.014,rock:0.004,crate:0.003}, crops:false, fences:3,
-    bld:{n:4, wMin:13,wMax:19, hMin:10,hMax:14},
+    bld:{n:6, wMin:9,wMax:14, hMin:7,hMax:11}, startE:11, spawnMul:1.0,
     contW:[['crate',55],['locker',20],['medbox',15],['weaponbox',10]],
     mats:[['scrap',20,1,2],['spoon',14,1,2],['bread',12,1,1],['soda',10,1,1],
           ['ammo_9',10,4,10],['tape',8,1,1],['cash',12,5,25]],
     squads:[['shambler'],['shambler','shambler'],['runner'],['shambler','runner']],
-    squadN:3, buff:{hp:1,dmg:1}},
+    buff:{hp:1,dmg:1}},
   farm:{name:'Rotfield Farms', tier:1, grass:['#4a4d2e','#585c37'],
     scatter:{tree:0.008,bush:0.008,rock:0.003,crate:0.003}, crops:true, fences:9,
-    bld:{n:5, wMin:16,wMax:25, hMin:12,hMax:18}, // sprawling barns
+    bld:{n:6, wMin:10,wMax:15, hMin:8,hMax:12}, startE:11, spawnMul:1.0,
     contW:[['crate',55],['locker',20],['medbox',15],['weaponbox',10]],
     mats:[['beans',18,1,1],['bread',16,1,2],['water',14,1,1],['choc',10,1,2],
           ['soda',10,1,1],['scrap',8,1,2],['cash',8,5,30]],
     squads:[['shambler','shambler'],['shambler','shambler','shambler'],
             ['runner','shambler'],['runner','runner']],
-    squadN:4, buff:{hp:1,dmg:1}},
+    buff:{hp:1,dmg:1}},
+  // ---- YELLOW / tier 2 : medium buildings, more & faster enemies ----
   forest:{name:'Whispering Pines', tier:2, grass:['#2c4029','#33482f'],
     scatter:{tree:0.085,bush:0.030,rock:0.006,crate:0.001}, crops:false, fences:0,
-    bld:{n:3, wMin:11,wMax:16, hMin:9,hMax:13}, // big lodges
+    bld:{n:4, wMin:14,wMax:20, hMin:10,hMax:15}, startE:17, spawnMul:0.8,
     contW:[['crate',50],['medbox',25],['locker',15],['weaponbox',10]],
     mats:[['feather',20,1,2],['choc',12,1,2],['bandage',12,1,1],['water',10,1,1],
           ['figurine',4,1,1],['cash',8,10,40]],
     squads:[['runner','runner'],['runner','runner','runner'],
             ['shambler','runner'],['spitter','runner']],
-    squadN:5, buff:{hp:1.1,dmg:1.1}},
+    buff:{hp:1.1,dmg:1.1}},
   town:{name:'Old Marrowtown', tier:2, grass:['#3d443a','#464d42'],
     scatter:{tree:0.006,bush:0.008,rock:0.003,crate:0.005}, crops:false, fences:4,
-    bld:{n:8, wMin:14,wMax:22, hMin:11,hMax:16},
+    bld:{n:4, wMin:15,wMax:22, hMin:11,hMax:16}, startE:17, spawnMul:0.8,
     contW:[['locker',35],['crate',30],['medbox',20],['weaponbox',15]],
     mats:[['cash',20,20,90],['watch',8,1,1],['figurine',5,1,1],['medkit',6,1,1],
           ['bandage',10,1,2],['soda',10,1,1],['wires',8,1,2],['goldegg',2,1,1]],
     squads:[['shambler','shambler','runner'],['spitter','shambler'],
             ['runner','runner','shambler'],['shambler','shambler','shambler','shambler']],
-    squadN:6, buff:{hp:1.15,dmg:1.1}},
+    buff:{hp:1.15,dmg:1.1}},
+  // ---- RED / tier 3 : ONE giant building, most enemies, rare loot ----
   industrial:{name:'Rustworks Industrial', tier:3, grass:['#43413a','#4b4941'],
     scatter:{tree:0.004,bush:0.004,rock:0.008,crate:0.014}, crops:false, fences:5,
-    bld:{n:5, wMin:20,wMax:32, hMin:15,hMax:22}, // vast warehouses
+    bld:{n:1, giant:true, wMin:34,wMax:46, hMin:26,hMax:34}, startE:24, spawnMul:0.62, rare:true,
     contW:[['crate',35],['locker',30],['weaponbox',25],['medbox',10]],
     mats:[['scrap',22,2,4],['wires',18,1,3],['tape',12,1,2],['ammo_762',10,6,14],
           ['ammo_12',8,3,8],['grip',4,1,1],['cash',10,20,70]],
     squads:[['brute','shambler'],['spitter','spitter'],['brute','runner'],
-            ['shambler','shambler','spitter','runner']],
-    squadN:6, buff:{hp:1.3,dmg:1.2}},
+            ['brute','shambler','spitter','runner']],
+    buff:{hp:1.4,dmg:1.25}},
   military:{name:'Fort Cinder Depot', tier:3, grass:['#3a4534','#424d3b'],
     scatter:{tree:0.006,bush:0.006,rock:0.006,crate:0.009}, crops:false, fences:7,
-    bld:{n:5, wMin:17,wMax:28, hMin:13,hMax:19},
+    bld:{n:1, giant:true, wMin:32,wMax:44, hMin:24,hMax:32}, startE:24, spawnMul:0.62, rare:true,
     contW:[['weaponbox',45],['locker',30],['medbox',15],['crate',10]],
     mats:[['ammo_9',16,10,24],['ammo_762',16,8,20],['ammo_12',12,4,10],
           ['silencer',5,1,1],['reddot',6,1,1],['grip',6,1,1],['medkit',6,1,1],
           ['huntrifle',2,1,1],['akduckov',2,1,1],['cash',10,30,100]],
     squads:[['brute','brute'],['brute','spitter','shambler'],
-            ['spitter','spitter','runner'],['brute','runner','runner']],
-    squadN:6, buff:{hp:1.35,dmg:1.3}},
+            ['brute','spitter','spitter'],['brute','brute','runner','runner']],
+    buff:{hp:1.5,dmg:1.35}},
 };
+// rare-loot table for tier-3 red zones (folded into each container ~35% of the time)
+const RED_RARE = [['goldegg',6],['figurine',7],['t_sturdy',3],['t_swift',3],['t_owl',3],
+  ['t_vamp',3],['t_plume',3],['medkit',9],['silencer',5],['reddot',5],['akduckov',3],['huntrifle',3]];
 // zone types by distance from spawn (nearest → farthest)
 const ZONE_ORDER = ['outskirts','farm','forest','town','forest','industrial','military'];
 

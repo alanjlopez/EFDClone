@@ -130,22 +130,44 @@ function genWorld(raidSeed){
     }
     buildings.push({x:bx,y:by,w:bw,h:bh});
   };
+  // does a bw×bh footprint (plus a 2-tile margin) fit on clear grass here?
+  const fits=(bx,by,bw,bh)=>{
+    if(bx<5||by<5||bx+bw>MW-5||by+bh>MH-5) return false;
+    if(Math.hypot(bx+bw/2-spawnT.x, by+bh/2-spawnT.y)<20) return false; // spawn clearing
+    for(let y=by-2;y<by+bh+2;y++) for(let x=bx-2;x<bx+bw+2;x++)
+      if(at(x,y)!==T.GRASS) return false;
+    return true;
+  };
   for(const z of zones){
     const B=z.def.bld;
+    if(B.giant){
+      // red zone: place exactly ONE very large building, shrinking until it fits
+      let done=false;
+      for(let shrink=0; shrink<=20 && !done; shrink+=2){
+        const bw=Math.max(18, rri(rng,B.wMin,B.wMax)-shrink);
+        const bh=Math.max(14, rri(rng,B.hMin,B.hMax)-shrink);
+        if(bw>=MW-12||bh>=MH-12) continue;
+        let tries=0;
+        while(tries++<1400 && !done){
+          const bx=rri(rng,5,MW-6-bw), by=rri(rng,5,MH-6-bh);
+          if(zoneAtT(bx+((bw/2)|0), by+((bh/2)|0))!==z) continue;
+          if(!fits(bx,by,bw,bh)) continue;
+          carveBuilding(bx,by,bw,bh);
+          done=true;
+        }
+      }
+      continue;
+    }
     let placed=0, tries=0;
     while(placed<B.n && tries++<1100){
-      // ~30% of buildings roll oversized — sprawling, multi-room structures
-      const large=rng()<0.3;
-      const bw=large?rri(rng,B.wMax,B.wMax+9):rri(rng,B.wMin,B.wMax);
-      const bh=large?rri(rng,B.hMax,B.hMax+6):rri(rng,B.hMin,B.hMax);
+      // ~25% of buildings roll oversized — sprawling, multi-room structures
+      const large=rng()<0.25;
+      const bw=large?rri(rng,B.wMax,B.wMax+7):rri(rng,B.wMin,B.wMax);
+      const bh=large?rri(rng,B.hMax,B.hMax+5):rri(rng,B.hMin,B.hMax);
       if(bw>=MW-12||bh>=MH-12) continue;
       const bx=rri(rng,5,MW-6-bw), by=rri(rng,5,MH-6-bh);
       if(zoneAtT(bx+((bw/2)|0), by+((bh/2)|0))!==z) continue;
-      if(Math.hypot(bx+bw/2-spawnT.x, by+bh/2-spawnT.y)<20) continue; // spawn clearing
-      let ok=true;
-      for(let y=by-2;y<by+bh+2 && ok;y++) for(let x=bx-2;x<bx+bw+2 && ok;x++)
-        if(at(x,y)!==T.GRASS) ok=false;
-      if(!ok) continue;
+      if(!fits(bx,by,bw,bh)) continue;
       carveBuilding(bx,by,bw,bh);
       placed++;
     }
@@ -191,21 +213,25 @@ function genWorld(raidSeed){
   const extractions=[];
   for(const s of exSpots){
     clear(s.x,s.y,4);
-    extractions.push({x:s.x*TILE, y:s.y*TILE, r:76, name:s.name, time:4});
+    extractions.push({x:s.x*TILE, y:s.y*TILE, r:76, name:s.name, time:75});
   }
 
   // ============ per-raid: loot containers (zone flavored) ============
   const containers = [];
   const usedTiles = new Set();
+  const addSlot=(items, id, q)=>{
+    const d=ITEMS[id], slot={id, q};
+    if(d.type==='gun'){ slot.q=1; slot.ammo=rri(lrng,0,d.mag); slot.att={}; }
+    invAddItem(items, slot);
+  };
   const zoneSpice=(items, z)=>{ // fold the zone's signature materials in
     const n=rri(lrng,1,2);
     for(let i=0;i<n;i++){
       const e=rweighted(lrng, z.def.mats);
-      const d=ITEMS[e[0]];
-      const slot={id:e[0], q:rri(lrng,e[2]||1,e[3]||1)};
-      if(d.type==='gun'){ slot.q=1; slot.ammo=rri(lrng,0,d.mag); slot.att={}; }
-      invAddItem(items, slot);
+      addSlot(items, e[0], rri(lrng,e[2]||1,e[3]||1));
     }
+    // red (tier-3) zones have an increased chance of rare loot in every container
+    if(z.def.rare && lrng()<0.35) addSlot(items, rweighted(lrng, RED_RARE)[0], 1);
     return items;
   };
   const addContainer=(type, tx,ty)=>{
@@ -224,10 +250,12 @@ function genWorld(raidSeed){
     }
     return null;
   };
-  // building interiors: container count scales with floor area
+  // building interiors: container count scales with floor area, capped by tier
+  // so the one giant red building is genuinely worth clearing room by room
   for(const b of buildings){
     const z=zoneAtT(b.x+((b.w/2)|0), b.y+((b.h/2)|0));
-    const n=Math.max(1, Math.min(5, Math.round(b.w*b.h/28)+rri(lrng,0,1)));
+    const cap = z.def.tier>=3 ? 16 : z.def.tier===2 ? 8 : 5;
+    const n=Math.max(1, Math.min(cap, Math.round(b.w*b.h/40)+rri(lrng,0,1)));
     for(let i=0;i<n;i++){
       const p=freeFloorIn(b); if(!p) break;
       addContainer(rweighted(lrng, z.def.contW)[0], p.x, p.y);
@@ -249,35 +277,26 @@ function genWorld(raidSeed){
     if(addContainer('nest',x,y)) placed++;
   }
 
-  // ============ per-raid: zombie squads, composition & buffs per zone ============
-  // only half the usual squads pre-placed — the rest crawl out of the ground
-  // over the course of the run (see game.js spawner)
+  // ============ per-raid: pre-placed zombies, per-zone population & buffs ======
+  // each zone seeds startE zombies from its own squads — green light, yellow
+  // heavier, red heaviest (and hardest). The ground spawner (game.js) tops the
+  // map up over the run.
   const enemySpawns = [];
   for(const z of zones){
-    const squadTarget=Math.ceil(z.def.squadN/2);
-    let sq=0, stries=0;
-    while(sq<squadTarget && stries++<400){
+    let placed=0, stries=0;
+    while(placed<z.def.startE && stries++<900){
       const x=rri(lrng,8,MW-8), y=rri(lrng,8,MH-8);
+      const tt=at(x,y);
+      if(tt!==T.GRASS && tt!==T.ROAD) continue;
       if(zoneAtT(x,y)!==z) continue;
       const px=x*TILE, py=y*TILE;
-      if(Math.hypot(px-playerSpawn.x, py-playerSpawn.y)<520) continue;
+      if(Math.hypot(px-playerSpawn.x, py-playerSpawn.y)<440) continue;
       const squad=rpick(lrng, z.def.squads);
       for(const type of squad)
         enemySpawns.push({type, x:px+rr(lrng,-70,70), y:py+rr(lrng,-70,70),
                           hpMul:z.def.buff.hp, dmgMul:z.def.buff.dmg});
-      sq++;
+      placed+=squad.length;
     }
-  }
-  // a scattering of extra base-level shufflers so the drop isn't quiet
-  let baseN=0, btries=0;
-  while(baseN<14 && btries++<700){
-    const x=rri(lrng,8,MW-8), y=rri(lrng,8,MH-8);
-    if(at(x,y)!==T.GRASS) continue;
-    const px=x*TILE, py=y*TILE;
-    if(Math.hypot(px-playerSpawn.x, py-playerSpawn.y)<440) continue;
-    const z=zoneAtT(x,y);
-    enemySpawns.push({type:'shambler', x:px, y:py, hpMul:z.def.buff.hp, dmgMul:z.def.buff.dmg});
-    baseN++;
   }
 
   return {t, w:MW, h:MH, zones, zmap, buildings, containers, extractions,
