@@ -1,6 +1,6 @@
 // ============================================================================
-// world.js — seeded RNG, map generation, tile collision, LOS raycasting,
-//            terrain & minimap pre-rendering
+// world.js — seeded RNG, raid map + walkable home base generation, tile
+//            collision, LOS raycasting, terrain & minimap pre-rendering
 // ============================================================================
 'use strict';
 
@@ -29,8 +29,8 @@ function rweighted(rng, list){ // list of [value, weight, ...]
 }
 
 // ---------------------------------------------------------------------------
-// generation. Geometry comes from a fixed layout seed (persistent map), loot
-// containers & enemy squads from a per-raid seed.
+// raid map generation. Geometry comes from a fixed layout seed (persistent
+// map), loot containers & enemy squads from a per-raid seed.
 // ---------------------------------------------------------------------------
 const LAYOUT_SEED = 1337;
 
@@ -157,7 +157,7 @@ function genWorld(raidSeed){
     if(addContainer('nest',x,y)) placed++;
   }
 
-  // --------------------- per-raid: enemy squads ------------------------------
+  // --------------------- per-raid: zombie squads ------------------------------
   const enemySpawns = [];
   const spawnPts = [];
   for(const b of buildings) spawnPts.push({x:(b.x+b.w/2)*TILE, y:(b.y+b.h/2)*TILE});
@@ -174,7 +174,35 @@ function genWorld(raidSeed){
     squads++;
   }
 
-  return {t, at, buildings, containers, extractions, playerSpawn, enemySpawns};
+  return {t, w:MW, h:MH, buildings, containers, extractions, playerSpawn, enemySpawns,
+          stations:[]};
+}
+
+// ---------------------------------------------------------------------------
+// the walkable home base: hatch room up top, main hall, sewer below
+// ---------------------------------------------------------------------------
+function genBaseWorld(){
+  const w=34, h=26;
+  const t=new Uint8Array(w*h).fill(T.WALL);
+  const carve=(x1,y1,x2,y2,tt)=>{
+    for(let y=y1;y<=y2;y++) for(let x=x1;x<=x2;x++) t[y*w+x]=tt;
+  };
+  carve(14,2,19,5,T.FLOOR);   // hatch room
+  carve(15,5,18,7,T.FLOOR);   // corridor down
+  carve(5,7,28,15,T.FLOOR);   // main hall
+  carve(6,15,9,17,T.ROAD);    // stairwell to the sewer
+  carve(3,17,13,23,T.ROAD);   // sewer room
+  const S=TILE;
+  const stations=[
+    {type:'exit',   x:16.9*S, y:3.2*S,  label:'Deploy to Ground Zero'},
+    {type:'stash',  x:7*S,    y:8.8*S,  label:'Open Stash'},
+    {type:'bed',    x:7*S,    y:13.6*S, label:'Rest'},
+    {type:'trader', x:26.5*S, y:8.8*S,  label:'Trade with Boris'},
+    {type:'upgrade',x:26.5*S, y:13.6*S, label:'Use Workbench'},
+    {type:'sewer',  x:8*S,    y:21*S,   label:'Kneel at the Chalk Circle'},
+  ];
+  return {t, w, h, stations, containers:[], extractions:[], enemySpawns:[],
+          playerSpawn:{x:17*S, y:11*S}};
 }
 
 function rollLoot(table, rng){
@@ -194,12 +222,12 @@ function rollLoot(table, rng){
 }
 
 // ---------------------------------------------------------------------------
-// collision & raycasting
+// collision & raycasting (all take the world so raid & base both work)
 // ---------------------------------------------------------------------------
 function tileAt(world,x,y){
   const tx=Math.floor(x/TILE), ty=Math.floor(y/TILE);
-  if(tx<0||ty<0||tx>=MW||ty>=MH) return T.ROCK;
-  return world.t[ty*MW+tx];
+  if(tx<0||ty<0||tx>=world.w||ty>=world.h) return T.ROCK;
+  return world.t[ty*world.w+tx];
 }
 const solidAtPx  = (world,x,y)=> SOLID.has(tileAt(world,x,y));
 const opaqueAtPx = (world,x,y)=> OPAQUE.has(tileAt(world,x,y));
@@ -209,7 +237,7 @@ function collideCircle(world,x,y,r){
   const minTx=Math.floor((x-r)/TILE), maxTx=Math.floor((x+r)/TILE);
   const minTy=Math.floor((y-r)/TILE), maxTy=Math.floor((y+r)/TILE);
   for(let ty=minTy;ty<=maxTy;ty++) for(let tx=minTx;tx<=maxTx;tx++){
-    const tt=(tx<0||ty<0||tx>=MW||ty>=MH)?T.ROCK:world.t[ty*MW+tx];
+    const tt=(tx<0||ty<0||tx>=world.w||ty>=world.h)?T.ROCK:world.t[ty*world.w+tx];
     if(!SOLID.has(tt)) continue;
     const cx=Math.max(tx*TILE,Math.min(x,(tx+1)*TILE));
     const cy=Math.max(ty*TILE,Math.min(y,(ty+1)*TILE));
@@ -234,12 +262,12 @@ function castRay(world,x,y,ang,maxDist){
   let tMaxX=dx!==0?((dx>0?(tx+1)*TILE-x:x-tx*TILE)/Math.abs(dx)):Infinity;
   let tMaxY=dy!==0?((dy>0?(ty+1)*TILE-y:y-ty*TILE)/Math.abs(dy)):Infinity;
   let dist=0;
-  for(let i=0;i<200;i++){
+  for(let i=0;i<220;i++){
     if(tMaxX<tMaxY){ dist=tMaxX; tMaxX+=tDeltaX; tx+=stepX; }
     else{ dist=tMaxY; tMaxY+=tDeltaY; ty+=stepY; }
     if(dist>=maxDist) return maxDist;
-    if(tx<0||ty<0||tx>=MW||ty>=MH) return dist;
-    if(OPAQUE.has(world.t[ty*MW+tx])) return dist;
+    if(tx<0||ty<0||tx>=world.w||ty>=world.h) return dist;
+    if(OPAQUE.has(world.t[ty*world.w+tx])) return dist;
   }
   return maxDist;
 }
@@ -256,38 +284,38 @@ function losClear(world,x1,y1,x2,y2){
 // ---------------------------------------------------------------------------
 function prerenderTerrain(world){
   const cv=document.createElement('canvas');
-  cv.width=MW*TILE; cv.height=MH*TILE;
+  cv.width=world.w*TILE; cv.height=world.h*TILE;
   const c=cv.getContext('2d');
   const drng=mulberry32(99);
-  for(let y=0;y<MH;y++) for(let x=0;x<MW;x++){
-    const tt=world.t[y*MW+x], px=x*TILE, py=y*TILE;
+  for(let y=0;y<world.h;y++) for(let x=0;x<world.w;x++){
+    const tt=world.t[y*world.w+x], px=x*TILE, py=y*TILE;
     // base
-    let base='#2e3d2a';
-    if(tt===T.ROAD) base='#3d3a35'; else if(tt===T.FLOOR) base='#4a3c2e';
-    else if(tt===T.WALL) base='#23262e';
+    let base='#36462f';
+    if(tt===T.ROAD) base='#454139'; else if(tt===T.FLOOR) base='#524334';
+    else if(tt===T.WALL) base='#262a33';
     c.fillStyle=base; c.fillRect(px,py,TILE,TILE);
     if(tt===T.GRASS||tt===T.BUSH||tt===T.TREE){
-      c.fillStyle=drng()<0.5?'#33422e':'#2a382655';
+      c.fillStyle=drng()<0.5?'#3d4d35':'#31402c66';
       c.fillRect(px+drng()*24, py+drng()*24, 5,5);
-      c.fillStyle='#3a4a3444'; c.fillRect(px+drng()*24, py+drng()*24, 4,4);
+      c.fillStyle='#44573c55'; c.fillRect(px+drng()*24, py+drng()*24, 4,4);
     }
     if(tt===T.ROAD){
-      c.fillStyle='#46423c'; c.fillRect(px+drng()*24,py+drng()*24,6,3);
-      c.fillStyle='#35322d'; c.fillRect(px+drng()*22,py+drng()*22,8,4);
+      c.fillStyle='#4f4b43'; c.fillRect(px+drng()*24,py+drng()*24,6,3);
+      c.fillStyle='#3c3931'; c.fillRect(px+drng()*22,py+drng()*22,8,4);
     }
     if(tt===T.FLOOR){
       c.strokeStyle='#00000022'; c.strokeRect(px+.5,py+.5,TILE,TILE);
-      c.fillStyle='#52432f33'; c.fillRect(px,py+(x%2)*16,TILE,4);
+      c.fillStyle='#5c4b3533'; c.fillRect(px,py+(x%2)*16,TILE,4);
     }
     if(tt===T.WALL){
-      c.fillStyle='#2f333e'; c.fillRect(px,py,TILE,TILE-6);
-      c.fillStyle='#3a3f4d'; c.fillRect(px,py,TILE,4);
+      c.fillStyle='#333846'; c.fillRect(px,py,TILE,TILE-6);
+      c.fillStyle='#3f4555'; c.fillRect(px,py,TILE,4);
       c.strokeStyle='#00000044'; c.strokeRect(px+.5,py+.5,TILE-1,TILE-1);
     }
     if(tt===T.TREE){
       c.fillStyle='#00000033'; c.beginPath(); c.ellipse(px+18,py+20,13,9,0,0,7); c.fill();
-      c.fillStyle='#1e3320'; c.beginPath(); c.arc(px+16,py+14,13,0,7); c.fill();
-      c.fillStyle='#2a4527'; c.beginPath(); c.arc(px+13,py+11,9,0,7); c.fill();
+      c.fillStyle='#243d26'; c.beginPath(); c.arc(px+16,py+14,13,0,7); c.fill();
+      c.fillStyle='#31512e'; c.beginPath(); c.arc(px+13,py+11,9,0,7); c.fill();
     }
     if(tt===T.ROCK){
       c.fillStyle='#00000033'; c.beginPath(); c.ellipse(px+17,py+21,12,7,0,0,7); c.fill();
@@ -306,7 +334,7 @@ function prerenderTerrain(world){
       c.moveTo(px+29,py+3); c.lineTo(px+3,py+29); c.stroke();
     }
     if(tt===T.BUSH){
-      c.fillStyle='#33502e'; c.beginPath(); c.arc(px+12,py+18,8,0,7); c.arc(px+21,py+14,7,0,7); c.fill();
+      c.fillStyle='#3b5c35'; c.beginPath(); c.arc(px+12,py+18,8,0,7); c.arc(px+21,py+14,7,0,7); c.fill();
     }
   }
   return cv;
@@ -315,11 +343,11 @@ function prerenderTerrain(world){
 function prerenderMinimap(world){
   const cv=document.createElement('canvas');
   cv.width=168; cv.height=168;
-  const c=cv.getContext('2d'), s=168/MW;
-  const cols={[T.GRASS]:'#22301f',[T.ROAD]:'#3d3a35',[T.FLOOR]:'#4a3c2e',[T.WALL]:'#657084',
-              [T.TREE]:'#17281a',[T.ROCK]:'#4a505a',[T.FENCE]:'#4a3a26',[T.CRATE]:'#6a4f30',[T.BUSH]:'#2a3f26'};
-  for(let y=0;y<MH;y++) for(let x=0;x<MW;x++){
-    c.fillStyle=cols[world.t[y*MW+x]]||'#000';
+  const c=cv.getContext('2d'), s=168/world.w;
+  const cols={[T.GRASS]:'#283a25',[T.ROAD]:'#454139',[T.FLOOR]:'#524334',[T.WALL]:'#657084',
+              [T.TREE]:'#1c301f',[T.ROCK]:'#4a505a',[T.FENCE]:'#4a3a26',[T.CRATE]:'#6a4f30',[T.BUSH]:'#31482c'};
+  for(let y=0;y<world.h;y++) for(let x=0;x<world.w;x++){
+    c.fillStyle=cols[world.t[y*world.w+x]]||'#000';
     c.fillRect(x*s,y*s,s+0.5,s+0.5);
   }
   return cv;

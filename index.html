@@ -28,11 +28,19 @@
   .stico{background:#000000aa;border:1px solid var(--line);border-radius:4px;padding:2px 7px;display:none;}
   .stico.on{display:block;animation:blink 1s infinite;}
   @keyframes blink{50%{opacity:.45}}
+  #awareness{margin-top:6px;display:inline-block;font-size:11px;font-weight:700;letter-spacing:1px;
+    padding:3px 10px;border-radius:4px;border:1px solid var(--line);background:#000000aa;}
+  #awareness.aw-hidden{color:#79c98a;}
+  #awareness.aw-search{color:#ffd257;border-color:#8a7430;animation:blink 1.2s infinite;}
+  #awareness.aw-spotted{color:#ff5a4a;border-color:#a03428;animation:blink .55s infinite;}
   #timerbox{position:absolute;right:14px;top:12px;text-align:right;}
   #timer{font-size:18px;font-weight:700;letter-spacing:2px;text-shadow:0 1px 3px #000;}
   #stormwarn{font-size:12px;font-weight:700;color:var(--storm);display:none;margin-top:2px;
     animation:blink .8s infinite;}
   #mm{margin-top:8px;border:1px solid var(--line);border-radius:4px;background:#000c;}
+  #basehint{position:absolute;right:14px;top:12px;display:none;font-size:12px;font-weight:700;
+    letter-spacing:2px;color:#79c98a;background:#000000aa;border:1px solid var(--line);
+    border-radius:4px;padding:4px 12px;}
   #wpnbox{position:absolute;right:14px;bottom:14px;text-align:right;background:#000000aa;
     border:1px solid var(--line);border-radius:6px;padding:8px 12px;min-width:170px;}
   #wpnname{font-size:13px;font-weight:700;color:var(--accent2);}
@@ -59,10 +67,11 @@
 
   /* ---------- slot grids / items ---------- */
   .slotgrid{display:grid;grid-template-columns:repeat(6,46px);gap:4px;}
+  .stashgrid{display:grid;grid-template-columns:repeat(8,46px);gap:4px;}
   .slot{width:46px;height:46px;background:#0c0f16;border:1px solid var(--line);border-radius:4px;
     position:relative;pointer-events:auto;}
   .slot.eqslot{border-color:#3a4358;background:#111624;}
-  .slot.dogslot{border-color:#6b5537;background:#191408;}
+  .slot.safeslot{border-color:#6b5537;background:#191408;}
   .slot .eqtag{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     font-size:8px;color:#556;letter-spacing:1px;text-align:center;}
   .slot.dragover{border-color:var(--accent);box-shadow:0 0 6px var(--accent);}
@@ -76,18 +85,21 @@
 
   /* ---------- side panels ---------- */
   .panel{position:absolute;top:50%;transform:translateY(-50%);background:#151a23f2;border:1px solid var(--line);
-    border-radius:8px;padding:14px;display:none;pointer-events:auto;box-shadow:0 8px 40px #000a;}
+    border-radius:8px;padding:14px;display:none;pointer-events:auto;box-shadow:0 8px 40px #000a;
+    max-height:92vh;overflow-y:auto;}
   .panel h3{font-size:13px;letter-spacing:2px;color:var(--accent2);margin-bottom:8px;text-transform:uppercase;}
   .panel .sub{font-size:10px;color:var(--dim);margin:6px 0 4px;letter-spacing:1px;text-transform:uppercase;}
   #invpanel{right:16px;}
   #lootpanel{left:16px;}
+  #stationpanel{left:16px;min-width:420px;}
   #eqrow{display:flex;gap:4px;margin-bottom:2px;}
-  #dogrow{display:flex;gap:4px;align-items:center;}
-  #dogface{font-size:26px;margin-right:4px;}
+  #pouchrow{display:flex;gap:4px;align-items:center;}
+  #pouchface{font-size:22px;margin-right:4px;}
   #weightlbl{font-size:11px;color:var(--dim);margin-top:8px;}
   #weightlbl.over{color:var(--hp);font-weight:700;}
   #invhint{font-size:9px;color:#566;margin-top:6px;line-height:1.5;max-width:300px;}
   #loottake{margin-top:8px;}
+  .panelhint{font-size:10px;color:#566;margin-top:10px;line-height:1.6;}
 
   /* ---------- buttons ---------- */
   button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:5px;
@@ -116,21 +128,7 @@
   #deathmsg{color:var(--hp);}
   #summsg{color:var(--stam);}
 
-  /* ---------- bunker ---------- */
-  #bunker{background:linear-gradient(180deg,#12151d 0%,#0b0d12 100%);justify-content:flex-start;
-    padding:26px 30px;overflow:auto;}
-  #bkhead{width:100%;max-width:1060px;display:flex;align-items:center;gap:18px;margin-bottom:16px;}
-  #bkhead h2{font-size:22px;letter-spacing:3px;color:var(--accent);}
-  #bkcash{font-size:16px;font-weight:700;color:var(--energy);margin-left:auto;}
-  #bktabs{width:100%;max-width:1060px;display:flex;gap:6px;margin-bottom:14px;}
-  #bktabs button{border-radius:5px 5px 0 0;border-bottom:2px solid transparent;}
-  #bktabs button.on{border-color:var(--accent);color:var(--accent2);background:#1c2230;}
-  #bkbody{width:100%;max-width:1060px;display:flex;gap:22px;align-items:flex-start;}
-  #bkleft{flex:1;background:#151a23;border:1px solid var(--line);border-radius:8px;padding:16px;min-height:420px;}
-  #bkright{background:#151a23;border:1px solid var(--line);border-radius:8px;padding:16px;}
-  #bkleft h3,#bkright h3{font-size:12px;letter-spacing:2px;color:var(--accent2);margin-bottom:10px;text-transform:uppercase;}
-  .stashgrid{display:grid;grid-template-columns:repeat(8,46px);gap:4px;}
-  #bkhint{font-size:10px;color:#566;margin-top:10px;line-height:1.6;}
+  /* ---------- station content ---------- */
   .shoprow{display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid #1e2534;font-size:13px;}
   .shoprow .ico{font-size:20px;width:30px;text-align:center;}
   .shoprow .pn{flex:1;}
@@ -139,8 +137,8 @@
   .upcard h4{color:var(--text);font-size:14px;margin-bottom:4px;}
   .upcard p{color:var(--dim);font-size:12px;margin-bottom:10px;line-height:1.5;}
   .upcard .cost{color:var(--energy);font-size:12px;margin-bottom:10px;}
-  #sewerbox{text-align:center;padding:30px 10px;}
-  #sewerbox .circle{font-size:64px;margin-bottom:8px;filter:drop-shadow(0 0 18px #a45de088);}
+  #sewerbox{text-align:center;padding:20px 10px;}
+  #sewerbox .circle{font-size:56px;margin-bottom:8px;filter:drop-shadow(0 0 18px #a45de088);}
   #sewerbox p{color:var(--dim);font-size:13px;margin:8px 0 18px;line-height:1.7;}
   #feathercount{color:var(--accent2);font-weight:700;}
   #gacharesult{margin-top:16px;font-size:14px;color:var(--storm);min-height:22px;font-weight:700;}
@@ -155,7 +153,7 @@
   #ghost{position:absolute;z-index:60;font-size:28px;pointer-events:none;display:none;
     filter:drop-shadow(0 3px 6px #000);}
 
-  #pauselist{display:flex;flex-direction:column;gap:10px;width:240px;}
+  #pauselist{display:flex;flex-direction:column;gap:10px;width:280px;}
   ::-webkit-scrollbar{width:8px;} ::-webkit-scrollbar-thumb{background:#2a3244;border-radius:4px;}
 </style>
 </head>
@@ -175,12 +173,14 @@
       <div class="stico" id="st-hungry" style="color:var(--energy)">🍞 STARVING</div>
       <div class="stico" id="st-thirst" style="color:var(--hyd)">💧 DEHYDRATED</div>
     </div>
+    <div id="awareness" class="aw-hidden">🌿 HIDDEN</div>
   </div>
   <div id="timerbox">
     <div id="timer">00:00</div>
     <div id="stormwarn">⛈ PURPLE STORM</div>
     <canvas id="mm" width="168" height="168"></canvas>
   </div>
+  <div id="basehint">🏠 THE BUNKER — SAFE ZONE</div>
   <div id="wpnbox">
     <div id="wpnname">—</div>
     <div id="wpnammo">— <span class="rsv"></span></div>
@@ -193,13 +193,13 @@
   <div id="stormvig"></div>
 </div>
 
-<!-- ============ raid inventory panel ============ -->
+<!-- ============ inventory panel (raid & base) ============ -->
 <div class="panel" id="invpanel">
   <h3>Backpack</h3>
   <div class="sub">Equipment</div>
   <div id="eqrow"></div>
-  <div class="sub">Dog Pouch <span style="color:#6b5537">(safe on death · weightless)</span></div>
-  <div id="dogrow"><span id="dogface">🐕</span><span id="doggrid" style="display:flex;gap:4px"></span></div>
+  <div class="sub">Secure Pouch <span style="color:#6b5537">(safe on death · weightless)</span></div>
+  <div id="pouchrow"><span id="pouchface">🔒</span><span id="pouchgrid" style="display:flex;gap:4px"></span></div>
   <div class="sub">Items</div>
   <div class="slotgrid" id="invgrid"></div>
   <div id="weightlbl"></div>
@@ -207,53 +207,30 @@
     Drop attachment onto a gun to mod it · Alt+Right-click gun = strip mods · Drag onto the world to drop</div>
 </div>
 
-<!-- ============ loot panel ============ -->
+<!-- ============ loot panel (raid) ============ -->
 <div class="panel" id="lootpanel">
   <h3 id="loottitle">Crate</h3>
   <div class="slotgrid" id="lootgrid"></div>
   <button class="small" id="loottake">Take All</button>
 </div>
 
+<!-- ============ station panel (base) ============ -->
+<div class="panel" id="stationpanel">
+  <h3 id="stationtitle">Stash</h3>
+  <div id="stationcontent"></div>
+</div>
+
 <!-- ============ menu ============ -->
 <div class="screen flex" id="menu">
   <h1>ESCAPE <span>from</span> CLAUDOV</h1>
-  <div class="tag">2D top-down extraction prototype · one small creature vs. the ducks</div>
+  <div class="tag">2D top-down extraction prototype · one small creature vs. the horde</div>
   <div class="btns">
     <button class="primary" id="btn-continue">Continue</button>
     <button id="btn-new">New Game</button>
   </div>
   <div id="controls">
     <b>WASD</b> move &nbsp; <b>Mouse</b> aim &nbsp; <b>LMB</b> fire / swing &nbsp; <b>Shift</b> sprint &nbsp; <b>R</b> reload<br>
-    <b>E</b> interact &nbsp; <b>Tab</b> inventory &nbsp; <b>1 2 3</b> / <b>wheel</b> weapons &nbsp; <b>F</b> bandage &nbsp; <b>Esc</b> pause
-  </div>
-</div>
-
-<!-- ============ bunker ============ -->
-<div class="screen" id="bunker">
-  <div id="bkhead">
-    <h2>⛺ THE BUNKER</h2>
-    <span style="color:var(--dim);font-size:12px">you rest — vitals restored</span>
-    <span id="bkcash">$0</span>
-    <button class="primary" id="btn-deploy">DEPLOY ➜ GROUND ZERO</button>
-  </div>
-  <div id="bktabs">
-    <button data-tab="stash" class="on">📦 Stash</button>
-    <button data-tab="trader">🦆 Trader</button>
-    <button data-tab="sewer">🕯 Sewer Circle</button>
-    <button data-tab="upgrades">🔧 Upgrades</button>
-  </div>
-  <div id="bkbody">
-    <div id="bkleft"></div>
-    <div id="bkright">
-      <h3>Loadout</h3>
-      <div class="sub">Equipment</div>
-      <div id="bk-eqrow" style="display:flex;gap:4px"></div>
-      <div class="sub">Dog Pouch</div>
-      <div style="display:flex;gap:4px;align-items:center"><span style="font-size:24px">🐕</span><span id="bk-doggrid" style="display:flex;gap:4px"></span></div>
-      <div class="sub">Backpack</div>
-      <div class="slotgrid" id="bk-invgrid"></div>
-      <div id="bk-weightlbl" style="font-size:11px;color:var(--dim);margin-top:8px"></div>
-    </div>
+    <b>E</b> interact / use stations &nbsp; <b>Tab</b> inventory &nbsp; <b>1 2 3</b> / <b>wheel</b> weapons &nbsp; <b>F</b> bandage &nbsp; <b>Esc</b> pause
   </div>
 </div>
 

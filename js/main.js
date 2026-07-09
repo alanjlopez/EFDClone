@@ -1,12 +1,12 @@
 // ============================================================================
-// main.js — boot, input, state machine (menu → bunker → raid → …), save/load
+// main.js — boot, input, state machine (menu → base ⇄ raid), save/load
 // ============================================================================
 'use strict';
 
 const SAVE_KEY='efclaudov_save_v1';
 const G={ mode:'menu', paused:false, save:null };
 const keys={};
-const mouse={x:innerWidth/2, y:innerHeight/2, down:false, clicked:false, clickedFresh:false, overUI:false};
+const mouse={x:innerWidth/2, y:innerHeight/2, down:false, clickedFresh:false, overUI:false};
 
 // ---------------------------------------------------------------------------
 // save / load
@@ -19,8 +19,7 @@ function loadGame(){
   try{
     const raw=localStorage.getItem(SAVE_KEY);
     if(!raw) return null;
-    const s=JSON.parse(raw);
-    if(s && s.ver===1) return s;
+    return migrateSave(JSON.parse(raw));
   }catch(e){}
   return null;
 }
@@ -37,20 +36,35 @@ function newGame(){
   if(loadGame() && !confirm('Overwrite the existing save?')) return;
   G.save=starterSave();
   saveGame();
-  enterBunker(true);
+  enterBase();
+  uiToast('Welcome home. Walk to the ladder and press E to deploy.','good');
+  uiToast('Boris, the stash, the workbench and the sewer are all down here — walk up and press E.','');
 }
 function continueGame(){
   const s=loadGame();
   if(!s) return;
   G.save=s;
-  enterBunker(true);
+  enterBase();
 }
-function enterBunker(silent){
-  G.mode='bunker'; G.paused=false;
-  bkTab='stash';
-  document.querySelectorAll('#bktabs button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='stash'));
-  uiShowScreen('bunker');
-  renderBunker();
+// you always own the bunker-issue infinite pistol
+function ensureBasePistol(){
+  const isInf=s=>s && ITEMS[s.id] && ITEMS[s.id].inf;
+  if(isInf(G.save.eq.g1)||isInf(G.save.eq.g2)) return;
+  if(G.save.inv.some(isInf)||G.save.stash.some(isInf)||G.save.pouch.some(isInf)) return;
+  const gun={id:'rustpistol',q:1,ammo:ITEMS.rustpistol.mag,att:{}};
+  if(!G.save.eq.g1) G.save.eq.g1=gun;
+  else if(!G.save.eq.g2) G.save.eq.g2=gun;
+  else if(invAddItem(G.save.inv,gun)) invAddItem(G.save.stash,gun);
+  uiToast('⚙️ Bunker-issue Rust Pistol re-issued.','');
+}
+function enterBase(){
+  G.mode='base'; G.paused=false;
+  ensureBasePistol();
+  uiCloseAllPanels();
+  startBaseState();
+  uiShowScreen(null);
+  uiRefreshAll();
+  uiUpdateWeapon();
   saveGame();
 }
 function deploy(){
@@ -62,7 +76,6 @@ function deploy(){
   G.mode='raid'; G.paused=false;
   uiCloseAllPanels();
   startRaidState();
-  dog.x=P.x-30; dog.y=P.y+10;
   uiShowScreen(null);
   uiRefreshAll();
   uiUpdateWeapon();
@@ -80,9 +93,9 @@ function handleExtract(zone){
     if(s.id==='cash'){ G.save.cash+=s.q; G.save.inv[i]=null; continue; }
     value+=ITEMS[s.id].val*(s.q||1); count++;
   }
-  for(let i=0;i<G.save.dog.length;i++){
-    const s=G.save.dog[i];
-    if(s && s.id==='cash'){ G.save.cash+=s.q; G.save.dog[i]=null; }
+  for(let i=0;i<G.save.pouch.length;i++){
+    const s=G.save.pouch[i];
+    if(s && s.id==='cash'){ G.save.cash+=s.q; G.save.pouch[i]=null; }
   }
   syncCorpse();
   G.save.stats.extracts++;
@@ -91,15 +104,17 @@ function handleExtract(zone){
   setTimeout(()=>uiShowSummary(zone.name, RAID.kills, RAID.time, count, value), 600);
 }
 function handlePlayerDeath(cause){
-  sfx('quackdie'); sfx('hurt');
+  sfx('groandie'); sfx('hurt');
   const hadOld = !!G.save.corpse; // one-chance rule: old corpse stash is gone
-  // everything on the body drops at the death site — dog pouch & totems survive
+  // everything on the body drops at the death site —
+  // secure pouch, totems & the bunker-issue pistol survive
   const items=[];
   for(let i=0;i<G.save.inv.length;i++){
     if(G.save.inv[i]){ items.push(G.save.inv[i]); G.save.inv[i]=null; }
   }
   for(const k of ['g1','g2','melee']){
-    if(G.save.eq[k]){ items.push(G.save.eq[k]); G.save.eq[k]=null; }
+    const s=G.save.eq[k];
+    if(s && !ITEMS[s.id].inf){ items.push(s); G.save.eq[k]=null; }
   }
   const lost=items.length;
   while(items.length%6!==0 || items.length===0) items.push(null);
@@ -123,14 +138,15 @@ function syncCorpse(){
 // ---------------------------------------------------------------------------
 // input
 // ---------------------------------------------------------------------------
+const inPlay=()=> (G.mode==='raid'||G.mode==='base') && !G.paused;
 addEventListener('keydown',e=>{
   const k=e.key.toLowerCase();
-  if(k==='tab'){ e.preventDefault(); if(G.mode==='raid'&&!G.paused) uiToggleInv(); return; }
+  if(k==='tab'){ e.preventDefault(); if(inPlay()) uiToggleInv(); return; }
   if(keys[k]) return; // ignore auto-repeat
   keys[k]=true;
   audio();
-  if(G.mode!=='raid'||G.paused){
-    if(k==='escape'&&G.mode==='raid'&&G.paused) togglePause();
+  if(!inPlay()){
+    if(k==='escape'&&(G.mode==='raid'||G.mode==='base')&&G.paused) togglePause();
     return;
   }
   switch(k){
@@ -143,6 +159,7 @@ addEventListener('keydown',e=>{
     case 'm': sndMuted=!sndMuted; uiToast('Sound '+(sndMuted?'off':'on'),''); break;
     case 'escape':
       if(uiLootOpen()) uiCloseLoot();
+      else if(uiStationOpen()) uiCloseStation();
       else if($('invpanel').style.display==='block') uiCloseAllPanels();
       else togglePause();
       break;
@@ -162,7 +179,7 @@ cvs.addEventListener('mousedown',e=>{
 });
 addEventListener('mouseup',e=>{ if(e.button===0){ mouse.down=false; } });
 addEventListener('wheel',e=>{
-  if(G.mode!=='raid'||G.paused||mouse.overUI) return;
+  if(!inPlay()||mouse.overUI) return;
   const dir=e.deltaY>0?1:-1;
   const slots=[G.save.eq.g1,G.save.eq.g2,G.save.eq.melee];
   for(let step=1;step<=3;step++){
@@ -172,8 +189,9 @@ addEventListener('wheel',e=>{
 });
 
 function togglePause(){
-  if(G.mode!=='raid') return;
+  if(G.mode!=='raid'&&G.mode!=='base') return;
   G.paused=!G.paused;
+  $('btn-abandon').style.display = (G.mode==='raid')?'block':'none';
   uiShowScreen(G.paused?'pause':null);
 }
 
@@ -182,16 +200,15 @@ function togglePause(){
 // ---------------------------------------------------------------------------
 $('btn-new').addEventListener('click',newGame);
 $('btn-continue').addEventListener('click',continueGame);
-$('btn-deploy').addEventListener('click',deploy);
-$('btn-death-ok').addEventListener('click',()=>enterBunker());
-$('btn-sum-ok').addEventListener('click',()=>enterBunker());
+$('btn-death-ok').addEventListener('click',()=>enterBase());
+$('btn-sum-ok').addEventListener('click',()=>enterBase());
 $('btn-resume').addEventListener('click',togglePause);
 $('btn-mute').addEventListener('click',()=>{
   sndMuted=!sndMuted;
   $('btn-mute').textContent='Sound: '+(sndMuted?'Off':'On');
 });
 $('btn-abandon').addEventListener('click',()=>{
-  if(!RAID||RAID.over){ togglePause(); return; }
+  if(G.mode!=='raid'||!RAID||RAID.over){ togglePause(); return; }
   G.paused=false;
   uiShowScreen(null);
   P.dead=true; RAID.over=true;
@@ -209,8 +226,8 @@ let lastT=performance.now();
 function frame(now){
   const dt=Math.min(0.05,(now-lastT)/1000);
   lastT=now;
-  if(G.mode==='raid'||G.mode==='dead'||G.mode==='summary'){
-    if(!G.paused && G.mode==='raid') updateRaid(dt);
+  if(G.mode!=='menu'){
+    if(!G.paused && (G.mode==='raid'||G.mode==='base')) updateRaid(dt);
     else if(RAID && (G.mode==='dead'||G.mode==='summary')){
       // let particles settle behind the end screens
       updateParticles(dt); cam.shk=Math.max(0,cam.shk-dt*18);

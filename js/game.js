@@ -1,6 +1,7 @@
 // ============================================================================
-// game.js — raid simulation: player, enemies, bullets, vision cone fog of war,
-//           survival meters, extraction, storm, rendering, synth sfx
+// game.js — simulation for raids AND the walkable home base: player, zombies,
+//           bullets, vision cone fog of war, survival meters, extraction,
+//           storm, stations, rendering, synth sfx
 // ============================================================================
 'use strict';
 
@@ -10,12 +11,12 @@ const mmCv = document.getElementById('mm');
 const mmCtx = mmCv.getContext('2d');
 
 // tuning ---------------------------------------------------------------------
-const FOV_DEG = 100, VIS_RANGE = 440, NEAR_VIS = 110;
+const FOV_DEG = 110, VIS_RANGE = 480, NEAR_VIS = 150;
 const STORM_WARN = 360, STORM_HIT = 480, STORM_DPS = 8;
 const BASE_WEIGHT_CAP = 40;
 const PLAYER_R = 13;
 
-let RAID = null;   // live raid state
+let RAID = null;   // live area state (raid or base — base sets .isBase)
 let P = null;      // player
 const cam = {x:0, y:0, shk:0};
 let fogCv=null, fogCtx=null;
@@ -52,8 +53,10 @@ function sfx(name){
     case 'reload':   tone(500,0.05,'square',0.09); setTimeout(()=>tone(700,0.05,'square',0.09),140); break;
     case 'melee':    noiseHit(0.09,0.12,600); break;
     case 'hit':      noiseHit(0.06,0.18,500); break;
-    case 'quack':    tone(420,0.10,'square',0.12,240); break;
-    case 'quackdie': tone(380,0.28,'square',0.14,90); break;
+    case 'groan':    tone(150,0.28,'sawtooth',0.11,75); break;
+    case 'groandie': tone(170,0.5,'sawtooth',0.13,45); noiseHit(0.2,0.08,300); break;
+    case 'growl':    tone(110,0.3,'sawtooth',0.15,260); break;
+    case 'spit':     noiseHit(0.1,0.14,500); tone(300,0.12,'sawtooth',0.09,140); break;
     case 'hurt':     tone(200,0.15,'sawtooth',0.14,90); break;
     case 'pickup':   tone(660,0.06,'sine',0.12,880); break;
     case 'eat':      noiseHit(0.1,0.1,400); setTimeout(()=>noiseHit(0.1,0.1,400),160); break;
@@ -63,7 +66,6 @@ function sfx(name){
     case 'storm':    tone(60,1.2,'sawtooth',0.16,35); noiseHit(1.0,0.12,220); break;
     case 'gacha':    tone(300,0.1,'sine',0.12,600); setTimeout(()=>tone(600,0.25,'sine',0.14,1200),150); break;
     case 'buy':      tone(760,0.07,'sine',0.1); setTimeout(()=>tone(950,0.07,'sine',0.1),90); break;
-    case 'alert':    tone(500,0.12,'square',0.10,650); break;
   }
 }
 
@@ -89,7 +91,7 @@ function calcWeight(){
   const add=s=>{ if(s) w += (ITEMS[s.id].w||0)*(s.q||1); };
   for(const s of G.save.inv) add(s);
   add(G.save.eq.g1); add(G.save.eq.g2); add(G.save.eq.melee);
-  return w; // dog pouch is a weightless sink by design
+  return w; // secure pouch is a weightless sink by design
 }
 const weightCap=()=> totemEff('weightMul', BASE_WEIGHT_CAP);
 function countAmmo(ammoId){
@@ -143,17 +145,30 @@ function activeWeaponSlot(){
 }
 
 // ============================================================================
-// raid setup
+// area setup
 // ============================================================================
+function makePlayer(spawn){
+  return {
+    x:spawn.x, y:spawn.y, r:PLAYER_R,
+    aim:-Math.PI/2, hp:100, maxhp:100, stam:100, energy:100, hyd:100,
+    bleed:false, active: G.save.eq.g1?0:(G.save.eq.g2?1:2),
+    fireCd:0, reloadT:0, switchT:0, heat:0, swingT:0, swingAnim:0, use:null,
+    hurtT:0, stamDelay:0, walkPhase:0, moving:false, dead:false, speedNow:0,
+  };
+}
+function centerCam(){
+  cam.x=P.x-cvs.width/2; cam.y=P.y-cvs.height/2; cam.shk=0;
+}
+
 function startRaidState(){
   const world = genWorld((Math.random()*1e9)|0);
   RAID = {
-    world,
+    world, isBase:false,
     terrain: prerenderTerrain(world),
     mmTerrain: prerenderMinimap(world),
-    enemies: [], bullets: [], parts: [], noises: [],
+    enemies: [], bullets: [], parts: [], noises: [], pings: [],
     containers: world.containers,
-    time: 0, storm: 'none',
+    time: 0, storm: 'none', awareness:'hidden',
     extractZone: null, extractT: 0,
     kills: 0, over: false,
   };
@@ -163,7 +178,7 @@ function startRaidState(){
       type:s.type, def, x:s.x, y:s.y, r:def.r, hp:def.hp, maxhp:def.hp,
       dir:Math.random()*7, state:'patrol', stateT:Math.random()*3,
       home:{x:s.x,y:s.y}, tgt:null, lastSeen:null, noLosT:0,
-      fireCd:0, burstLeft:def.atk.burst||1, pauseT:0, strafeDir:1, strafeT:0,
+      fireCd:0, burstLeft:(def.atk.burst||1), pauseT:0, strafeDir:1, strafeT:0,
       stuckT:0, avoidA:0, hurtT:0,
     });
   }
@@ -172,17 +187,25 @@ function startRaidState(){
     RAID.containers.push({type:'pcorpse', x:G.save.corpse.x, y:G.save.corpse.y,
                           items:G.save.corpse.items, opened:false});
   }
-  P = {
-    x: world.playerSpawn.x, y: world.playerSpawn.y, r: PLAYER_R,
-    aim: -Math.PI/2, hp:100, maxhp:100, stam:100, energy:100, hyd:100,
-    bleed:false, active: G.save.eq.g1?0:(G.save.eq.g2?1:2),
-    fireCd:0, reloadT:0, switchT:0, heat:0, swingT:0, use:null,
-    hurtT:0, stamDelay:0, walkPhase:0, moving:false, dead:false, speedNow:0,
-  };
-  cam.x = P.x - cvs.width/2; cam.y = P.y - cvs.height/2; cam.shk=0;
+  P = makePlayer(world.playerSpawn);
+  centerCam();
   G.save.stats.raids++;
   uiToast('Deployed to Ground Zero. Find loot, reach an extraction point.', '');
   uiToast('⛈ Purple storm forecast: '+Math.floor(STORM_HIT/60)+' minutes.', 'bad');
+}
+
+function startBaseState(){
+  const world = genBaseWorld();
+  RAID = {
+    world, isBase:true,
+    terrain: prerenderTerrain(world), mmTerrain:null,
+    enemies: [], bullets: [], parts: [], noises: [], pings: [],
+    containers: [],
+    time: 0, storm:'none', awareness:'hidden',
+    extractZone:null, extractT:0, kills:0, over:false,
+  };
+  P = makePlayer(world.playerSpawn);
+  centerCam();
 }
 
 function addNoise(x,y,r,owner){ RAID.noises.push({x,y,r,owner}); }
@@ -193,14 +216,16 @@ function addNoise(x,y,r,owner){ RAID.noises.push({x,y,r,owner}); }
 function updateRaid(dt){
   if(!RAID || RAID.over) return;
   RAID.time += dt;
-  updateStorm(dt);
+  if(!RAID.isBase) updateStorm(dt);
   updatePlayer(dt);
-  updateDog(dt);
   for(const e of RAID.enemies) updateEnemy(e, dt);
   RAID.enemies = RAID.enemies.filter(e=>e.hp>0);
   updateBullets(dt);
   updateParticles(dt);
-  updateExtraction(dt);
+  if(!RAID.isBase) updateExtraction(dt);
+  for(const p of RAID.pings) p.t+=dt;
+  RAID.pings = RAID.pings.filter(p=>p.t<2 && p.e.hp>0);
+  updateAwareness();
   RAID.noises.length = 0;
   cam.shk = Math.max(0, cam.shk - dt*18);
   // camera follows with slight aim lean
@@ -209,6 +234,18 @@ function updateRaid(dt){
   cam.x = lerp(cam.x, tx, Math.min(1, dt*7));
   cam.y = lerp(cam.y, ty, Math.min(1, dt*7));
   uiUpdateHUD();
+}
+
+// how aware is the horde of you, overall?
+function updateAwareness(){
+  let aw='hidden';
+  for(const e of RAID.enemies){
+    if(e.state==='combat'){
+      if(e.noLosT<5){ aw='spotted'; break; }
+      aw='search';
+    }else if(e.state==='investigate' && aw==='hidden') aw='search';
+  }
+  RAID.awareness=aw;
 }
 
 function updateStorm(dt){
@@ -231,14 +268,17 @@ function playerSpeed(){
   let sp = 150 * totemEff('speedMul',1);
   const sprinting = keys['shift'] && P.stam>0.5 && P.moving && !P.use;
   if(sprinting) sp *= 1.55;
-  if(P.hyd<=25) sp *= 0.85;
-  if(calcWeight()>weightCap()) sp *= 0.62;
+  if(!RAID.isBase){
+    if(P.hyd<=25) sp *= 0.85;
+    if(calcWeight()>weightCap()) sp *= 0.62;
+  }
   if(P.use) sp *= 0.6;
   return {sp, sprinting};
 }
 
 function updatePlayer(dt){
   if(P.dead) return;
+  const inBase=RAID.isBase;
   // aim
   P.aim = Math.atan2(mouse.y + cam.y - P.y, mouse.x + cam.x - P.x);
   // movement
@@ -259,22 +299,24 @@ function updatePlayer(dt){
   else{
     P.stamDelay=Math.max(0,P.stamDelay-dt);
     if(P.stamDelay<=0){
-      let regen=13; if(P.energy<=25) regen*=0.5;
+      let regen=13; if(!inBase && P.energy<=25) regen*=0.5;
       P.stam=Math.min(100,P.stam+regen*dt);
     }
   }
-  // survival meters
-  P.energy = Math.max(0, P.energy - (0.14 + (sprinting?0.10:0))*dt);
-  P.hyd    = Math.max(0, P.hyd    - (0.18 + (sprinting?0.14:0))*dt);
-  if(P.energy<=0) damagePlayer(0.6*dt, 'starvation', true);
-  if(P.hyd<=0)    damagePlayer(1.0*dt, 'dehydration', true);
-  if(P.bleed)     damagePlayer(1.5*dt, 'bleeding out', true);
-  const enc = calcWeight()>weightCap();
-  if(enc && P.moving) P.stam=Math.max(0,P.stam-5*dt);
+  // survival meters tick only out in the field
+  if(!inBase){
+    P.energy = Math.max(0, P.energy - (0.14 + (sprinting?0.10:0))*dt);
+    P.hyd    = Math.max(0, P.hyd    - (0.18 + (sprinting?0.14:0))*dt);
+    if(P.energy<=0) damagePlayer(0.6*dt, 'starvation', true);
+    if(P.hyd<=0)    damagePlayer(1.0*dt, 'dehydration', true);
+    if(P.bleed)     damagePlayer(1.5*dt, 'bleeding out', true);
+    if(calcWeight()>weightCap() && P.moving) P.stam=Math.max(0,P.stam-5*dt);
+  }
   // timers
   P.fireCd=Math.max(0,P.fireCd-dt);
   P.switchT=Math.max(0,P.switchT-dt);
   P.swingT=Math.max(0,P.swingT-dt);
+  P.swingAnim=Math.max(0,P.swingAnim-dt);
   P.hurtT=Math.max(0,P.hurtT-dt);
   P.heat=Math.max(0,P.heat-dt*7);
   // reload
@@ -284,8 +326,8 @@ function updatePlayer(dt){
       const slot=activeWeaponSlot();
       if(slot && ITEMS[slot.id].type==='gun'){
         const d=ITEMS[slot.id];
-        const got=takeAmmo(d.ammo, d.mag-(slot.ammo||0));
-        slot.ammo=(slot.ammo||0)+got;
+        if(d.inf) slot.ammo=d.mag;
+        else slot.ammo=(slot.ammo||0)+takeAmmo(d.ammo, d.mag-(slot.ammo||0));
         sfx('reload'); uiRefreshAll();
       }
     }
@@ -296,7 +338,8 @@ function updatePlayer(dt){
     if(P.use.t>=P.use.dur){ finishUse(); }
   }
   // fire input (clickedFresh buffers taps shorter than one frame)
-  if((mouse.down || mouse.clickedFresh) && !uiPointerBusy()) tryAttack();
+  if(inBase) mouse.clickedFresh=false; // safe zone
+  else if((mouse.down || mouse.clickedFresh) && !uiPointerBusy()) tryAttack();
   // interact scanning
   updateInteract();
 }
@@ -362,7 +405,7 @@ function startReload(){
   if(!slot) return;
   const d=ITEMS[slot.id];
   if(d.type!=='gun' || P.reloadT>0 || (slot.ammo||0)>=d.mag) return;
-  if(countAmmo(d.ammo)<=0){ uiToast('No '+ITEMS[d.ammo].name+' left!', 'bad'); sfx('click'); return; }
+  if(!d.inf && countAmmo(d.ammo)<=0){ uiToast('No '+ITEMS[d.ammo].name+' left!', 'bad'); sfx('click'); return; }
   P.reloadT=d.reload; sfx('click');
 }
 
@@ -377,6 +420,7 @@ function switchWeapon(idx){
 // -------- item use ----------------------------------------------------------
 function startUse(key, i, slot){
   if(P.use || P.dead) return;
+  if(RAID.isBase){ uiToast('You are rested — no need right now. (Try the bed if not.)',''); return; }
   const d=ITEMS[slot.id];
   if(!d.use) return;
   if(d.type==='med' && !P.bleed && P.hp>=P.maxhp){ uiToast('Already at full health.',''); return; }
@@ -391,12 +435,12 @@ function finishUse(){
   if(d.stopBleed && P.bleed){ P.bleed=false; uiToast('Bleeding stopped.','good'); }
   if(d.energy) P.energy=Math.min(100,P.energy+d.energy);
   if(d.hyd) P.hyd=Math.min(100,P.hyd+d.hyd);
-  sfx(d.type==='med'?'heal':(d.type==='drink'?'drink':'eat')); if(d.type==='drink') sfx('eat');
+  sfx(d.type==='med'?'heal':'eat');
   s.q--; if(s.q<=0) uiSetSlot(u.key,u.i,null);
   uiRefreshAll();
 }
 function quickBandage(){
-  if(P.use||P.dead) return;
+  if(P.use||P.dead||RAID.isBase) return;
   for(let i=0;i<G.save.inv.length;i++){
     const s=G.save.inv[i];
     if(s && ITEMS[s.id].type==='med'){ startUse('inv',i,s); return; }
@@ -406,7 +450,7 @@ function quickBandage(){
 
 // -------- interaction -------------------------------------------------------
 const CONT_NAMES={crate:'Wooden Crate', locker:'Locker', medbox:'Medical Box',
-  weaponbox:'Weapon Case', nest:'Golden Nest', duckcorpse:'Duck Corpse',
+  weaponbox:'Weapon Case', nest:'Golden Nest', zcorpse:'Zombie Corpse',
   pcorpse:'YOUR CORPSE', bag:'Dropped Bag'};
 function findInteractable(){
   let best=null, bd=52*52;
@@ -417,6 +461,7 @@ function findInteractable(){
   return best;
 }
 function updateInteract(){
+  if(RAID.isBase){ updateBaseInteract(); return; }
   const c=findInteractable();
   if(uiLootOpen()){
     const oc=uiLootContainer();
@@ -427,6 +472,32 @@ function updateInteract(){
   }
   uiPrompt(c ? '<b>E</b> — Search '+CONT_NAMES[c.type] : null);
   if(c && keys._e){ keys._e=false; c.opened=true; uiOpenLoot(c); sfx('pickup'); }
+  keys._e=false;
+}
+function updateBaseInteract(){
+  if(uiStationOpen()){
+    const os=uiStationObj();
+    if(os && dist2(P.x,P.y,os.x,os.y)>95*95) uiCloseStation();
+    uiPrompt(null);
+    keys._e=false;
+    return;
+  }
+  let best=null, bd=62*62;
+  for(const st of RAID.world.stations){
+    const d2=dist2(P.x,P.y,st.x,st.y);
+    if(d2<bd){ bd=d2; best=st; }
+  }
+  uiPrompt(best ? '<b>E</b> — '+best.label : null);
+  if(best && keys._e){
+    keys._e=false;
+    if(best.type==='exit'){ deploy(); return; }
+    if(best.type==='bed'){
+      P.hp=P.maxhp; P.stam=100; P.energy=100; P.hyd=100; P.bleed=false;
+      sfx('heal'); uiToast('You rest. All vitals restored.','good');
+      return;
+    }
+    uiOpenStation(best); sfx('pickup');
+  }
   keys._e=false;
 }
 function gameDropItem(slot){
@@ -461,7 +532,7 @@ function updateExtraction(dt){
 
 // -------- damage ------------------------------------------------------------
 function damagePlayer(dmg, src, env){
-  if(!P || P.dead || RAID.over) return;
+  if(!P || P.dead || RAID.over || RAID.isBase) return;
   P.hp-=dmg;
   if(!env){
     P.hurtT=0.35; cam.shk=Math.min(9,cam.shk+3);
@@ -471,45 +542,54 @@ function damagePlayer(dmg, src, env){
   }
   if(P.hp<=0){ P.hp=0; P.dead=true; RAID.over=true; handlePlayerDeath(src); }
 }
+// flips an enemy to combat, with a "spotted" ping if it happened off-screen
+function alertEnemy(e){
+  if(e.state==='combat') return;
+  e.state='combat'; e.noLosT=0;
+  sfx('growl');
+  spawnPart(e.x,e.y-e.r-8,0,-30,0.8,'#ff5a5a',5,'mark');
+  RAID.pings.push({e, t:0});
+}
 function damageEnemy(e, dmg, fromPlayer){
   if(e.def.armor) dmg*= (1-e.def.armor);
   e.hp-=dmg; e.hurtT=0.25;
   for(let i=0;i<4;i++) spawnPart(e.x,e.y,(Math.random()-0.5)*170,(Math.random()-0.5)*170,0.55,
-    Math.random()<0.6?'#f2ead0':'#c23b3b',3);
+    Math.random()<0.6?'#8fae56':'#c23b3b',3);
   if(fromPlayer){
     e.lastSeen={x:P.x,y:P.y}; e.noLosT=0;
-    if(e.state!=='combat'){ e.state='combat'; sfx('quack'); }
+    alertEnemy(e);
   }
   if(e.hp<=0) killEnemy(e);
-  else sfx('quack');
+  else sfx('groan');
 }
 function killEnemy(e){
   RAID.kills++; G.save.stats.kills++;
-  sfx('quackdie');
+  sfx('groandie');
   P.hp=Math.min(P.maxhp, P.hp+totemEff('killHeal',0));
-  for(let i=0;i<10;i++) spawnPart(e.x,e.y,(Math.random()-0.5)*260,(Math.random()-0.5)*260,0.9,'#f2ead0',3.5);
+  for(let i=0;i<10;i++) spawnPart(e.x,e.y,(Math.random()-0.5)*260,(Math.random()-0.5)*260,0.9,
+    Math.random()<0.5?'#8fae56':'#c23b3b',3.5);
   // corpse loot
-  const items=rollLoot('duck', Math.random);
+  const items=rollLoot('zombie', Math.random);
   if(e.def.gunDrop && Math.random()<e.def.gunDrop[1]){
     const gid=e.def.gunDrop[0];
     invAddItem(items,{id:gid,q:1,ammo:(Math.random()*ITEMS[gid].mag)|0,att:{}});
   }
-  if(Math.random()<0.65){
+  if(Math.random()<0.7){
     const q=Math.max(1,Math.round((1+Math.floor(Math.random()*2))*totemEff('featherMul',1)));
     invAddItem(items,{id:'feather',q});
   }
-  RAID.containers.push({type:'duckcorpse', x:e.x, y:e.y, items, opened:false, duckType:e.type});
+  RAID.containers.push({type:'zcorpse', x:e.x, y:e.y, items, opened:false, zType:e.type});
 }
 
 // ============================================================================
-// enemy AI
+// zombie AI
 // ============================================================================
 function enemyCanSeePlayer(e){
   if(P.dead) return false;
   const d=Math.hypot(P.x-e.x,P.y-e.y);
   if(d>e.def.vision) return false;
   const a=Math.atan2(P.y-e.y,P.x-e.x);
-  if(d>70 && Math.abs(angDiff(e.dir,a))>e.def.fov*Math.PI/360) return false;
+  if(d>80 && Math.abs(angDiff(e.dir,a))>e.def.fov*Math.PI/360) return false;
   return losClear(RAID.world,e.x,e.y,P.x,P.y);
 }
 function enemyMove(e, tx, ty, speed, dt){
@@ -517,7 +597,7 @@ function enemyMove(e, tx, ty, speed, dt){
   const a=a0+e.avoidA;
   const ox=e.x, oy=e.y;
   let nx=e.x+Math.cos(a)*speed*dt, ny=e.y+Math.sin(a)*speed*dt;
-  // soft separation from other ducks
+  // soft separation so the horde doesn't stack
   for(const o of RAID.enemies){
     if(o===e) continue;
     const d2v=dist2(e.x,e.y,o.x,o.y);
@@ -555,7 +635,7 @@ function updateEnemy(e, dt){
   }
   const sees=enemyCanSeePlayer(e);
   if(sees){
-    if(e.state!=='combat'){ e.state='combat'; sfx('alert'); spawnPart(e.x,e.y-22,0,-30,0.7,'#ffd257',5,'mark'); }
+    alertEnemy(e);
     e.lastSeen={x:P.x,y:P.y}; e.noLosT=0;
   }else if(e.state==='combat'){ e.noLosT+=dt; }
 
@@ -584,12 +664,12 @@ function updateEnemy(e, dt){
         if(sees) e.dir=lerp2Angle(e.dir,Math.atan2(P.y-e.y,P.x-e.x),dt*10);
         if(d<atk.range+P.r && e.fireCd<=0 && sees){
           e.fireCd=1/atk.rof;
-          damagePlayer(atk.dmg, e.def.name);
+          damagePlayer(atk.dmg, 'a '+e.def.name);
         }
       }else{ e.state='investigate'; e.stateT=0; e.tgt=ls; }
       return;
     }
-    // ranged
+    // ranged (Spitter)
     if(sees){
       e.dir=lerp2Angle(e.dir, Math.atan2(P.y-e.y,P.x-e.x), dt*7);
       const pref=atk.range*0.65;
@@ -602,7 +682,7 @@ function updateEnemy(e, dt){
         enemyMove(e,e.x+Math.cos(pa)*50,e.y+Math.sin(pa)*50,e.def.speed*0.6,dt);
         e.dir=lerp2Angle(e.dir, Math.atan2(P.y-e.y,P.x-e.x), dt*9);
       }
-      // shoot
+      // spit
       if(d<atk.range && e.pauseT<=0 && e.fireCd<=0 &&
          Math.abs(angDiff(e.dir,Math.atan2(P.y-e.y,P.x-e.x)))<0.22){
         e.fireCd=1/atk.rof;
@@ -611,11 +691,11 @@ function updateEnemy(e, dt){
           const a=e.dir+(Math.random()-0.5)*atk.spread*Math.PI/180;
           RAID.bullets.push({x:e.x+Math.cos(e.dir)*20,y:e.y+Math.sin(e.dir)*20,
             vx:Math.cos(a)*atk.vel,vy:Math.sin(a)*atk.vel,dmg:atk.dmg,owner:'e',
-            dist:0,maxRange:atk.range*1.4,px:e.x,py:e.y});
+            dist:0,maxRange:atk.range*1.4,px:e.x,py:e.y,acid:atk.acid,src:'a '+e.def.name});
         }
-        spawnPart(e.x+Math.cos(e.dir)*20,e.y+Math.sin(e.dir)*20,0,0,0.06,'#ffdf91',6,'flash');
+        spawnPart(e.x+Math.cos(e.dir)*20,e.y+Math.sin(e.dir)*20,0,0,0.12,'#b8e04a',5,'flash');
         addNoise(e.x,e.y,atk.noise,'enemy');
-        sfx(atk.pellets?'boom':'shot'); // audible even when unseen — that's the warning
+        sfx('spit'); // audible even when unseen — that's the warning
         e.burstLeft--;
         if(e.burstLeft<=0){ e.burstLeft=atk.burst; e.pauseT=atk.pause; }
       }
@@ -641,7 +721,7 @@ function updateBullets(dt){
     for(let k=0;k<n && !dead;k++){
       b.x+=b.vx*dt/n; b.y+=b.vy*dt/n; b.dist+=step/n;
       if(opaqueAtPx(RAID.world,b.x,b.y)){
-        spawnPart(b.x,b.y,0,0,0.15,'#cfc9a8',2.5); dead=true; break;
+        spawnPart(b.x,b.y,0,0,0.15,b.acid?'#9adf3a':'#cfc9a8',2.5); dead=true; break;
       }
       const fall=b.dist>b.maxRange*0.6 ? lerp(1,0.55,(b.dist-b.maxRange*0.6)/(b.maxRange*0.4)) : 1;
       if(b.owner==='p'){
@@ -651,7 +731,7 @@ function updateBullets(dt){
           }
         }
       }else if(!P.dead && dist2(b.x,b.y,P.x,P.y)<(P.r+2)*(P.r+2)){
-        damagePlayer(b.dmg*fall,'a duck'); dead=true;
+        damagePlayer(b.dmg*fall, b.src||'a zombie'); dead=true;
       }
       if(b.dist>=b.maxRange) dead=true;
     }
@@ -680,6 +760,7 @@ function playerVisRange(){
   return r;
 }
 function visibleAt(x,y){
+  if(RAID.isBase) return true;
   const d=Math.hypot(x-P.x,y-P.y);
   if(d<NEAR_VIS) return losClear(RAID.world,P.x,P.y,x,y);
   if(d<playerVisRange() &&
@@ -699,16 +780,23 @@ function renderRaid(){
   ctx.translate(-cam.x+sx, -cam.y+sy);
 
   ctx.drawImage(RAID.terrain,0,0);
-  drawExtractions();
+  if(RAID.isBase) drawStations();
+  else drawExtractions();
   for(const c of RAID.containers) drawContainer(c);
-  drawDog();
   drawPlayer();
-  for(const e of RAID.enemies) if(visibleAt(e.x,e.y)) drawDuck(e);
+  for(const e of RAID.enemies) if(visibleAt(e.x,e.y)) drawZombie(e);
   // bullets (fog will mask distant ones)
-  ctx.lineWidth=2;
   for(const b of RAID.bullets){
-    ctx.strokeStyle=b.owner==='p'?'#ffe9a8cc':'#ff9a7acc';
-    ctx.beginPath(); ctx.moveTo(b.px,b.py); ctx.lineTo(b.x,b.y); ctx.stroke();
+    if(b.acid){
+      ctx.fillStyle='#9adf3a';
+      ctx.beginPath(); ctx.arc(b.x,b.y,3.5,0,7); ctx.fill();
+      ctx.fillStyle='#9adf3a66';
+      ctx.beginPath(); ctx.arc(b.px,b.py,2.2,0,7); ctx.fill();
+    }else{
+      ctx.lineWidth=2;
+      ctx.strokeStyle=b.owner==='p'?'#ffe9a8cc':'#ff9a7acc';
+      ctx.beginPath(); ctx.moveTo(b.px,b.py); ctx.lineTo(b.x,b.y); ctx.stroke();
+    }
   }
   for(const p of RAID.parts){
     const a=1-p.t/p.life;
@@ -725,10 +813,11 @@ function renderRaid(){
   }
   ctx.restore();
 
-  drawFog(sx,sy);
+  if(RAID.isBase) drawBaseAmbience();
+  else{ drawFog(sx,sy); drawSpottedPings(); }
   drawScreenFx();
   drawCrosshair();
-  drawMinimap();
+  if(!RAID.isBase) drawMinimap();
 }
 
 function drawFog(sx,sy){
@@ -740,20 +829,20 @@ function drawFog(sx,sy){
   const f=fogCtx;
   f.globalCompositeOperation='source-over';
   f.clearRect(0,0,w,h);
-  f.fillStyle=RAID.storm==='active'?'rgba(26,8,34,0.93)':'rgba(6,8,16,0.93)';
+  f.fillStyle=RAID.storm==='active'?'rgba(26,8,34,0.86)':'rgba(8,10,18,0.80)';
   f.fillRect(0,0,w,h);
   const px=P.x-cam.x+sx, py=P.y-cam.y+sy;
   const range=playerVisRange();
   const grad=f.createRadialGradient(px,py,10,px,py,range);
   grad.addColorStop(0,'rgba(255,255,255,0.98)');
-  grad.addColorStop(0.72,'rgba(255,255,255,0.85)');
+  grad.addColorStop(0.75,'rgba(255,255,255,0.88)');
   grad.addColorStop(1,'rgba(255,255,255,0)');
   f.globalCompositeOperation='destination-out';
   // cone polygon
   f.fillStyle=grad;
   f.beginPath();
   f.moveTo(px,py);
-  const half=FOV_DEG*Math.PI/360, n=64;
+  const half=FOV_DEG*Math.PI/360, n=68;
   for(let i=0;i<=n;i++){
     const a=P.aim-half+(2*half)*i/n;
     const d=castRay(RAID.world,P.x,P.y,a,range);
@@ -762,7 +851,7 @@ function drawFog(sx,sy){
   f.closePath(); f.fill();
   // near-vision ring (see a little all around)
   const ngrad=f.createRadialGradient(px,py,5,px,py,NEAR_VIS);
-  ngrad.addColorStop(0,'rgba(255,255,255,0.9)');
+  ngrad.addColorStop(0,'rgba(255,255,255,0.92)');
   ngrad.addColorStop(1,'rgba(255,255,255,0)');
   f.fillStyle=ngrad;
   f.beginPath();
@@ -776,13 +865,44 @@ function drawFog(sx,sy){
   ctx.drawImage(fogCv,0,0);
 }
 
+// red edge-of-screen "!" when something you can't see has spotted you
+function drawSpottedPings(){
+  const w=cvs.width,h=cvs.height,m=42;
+  for(const p of RAID.pings){
+    const e=p.e;
+    if(visibleAt(e.x,e.y)) continue;
+    let x=e.x-cam.x, y=e.y-cam.y;
+    x=clamp(x,m,w-m); y=clamp(y,m,h-m);
+    const a=clamp(1.6-p.t,0,1);
+    ctx.globalAlpha=a;
+    ctx.fillStyle='#c22b2b';
+    ctx.beginPath(); ctx.arc(x,y,13,0,7); ctx.fill();
+    ctx.strokeStyle='#ff8a7a'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x,y,13+p.t*10,0,7); ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='bold 16px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('!',x,y+5.5);
+    ctx.textAlign='left';
+    ctx.globalAlpha=1;
+  }
+}
+
+function drawBaseAmbience(){
+  const w=cvs.width,h=cvs.height;
+  const g=ctx.createRadialGradient(w/2,h/2,h*0.28,w/2,h/2,h*0.85);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(1,'rgba(4,6,12,0.55)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle='rgba(217,150,87,0.045)'; // warm lamp tint
+  ctx.fillRect(0,0,w,h);
+}
+
 function drawScreenFx(){
   const w=cvs.width,h=cvs.height;
   if(P.hurtT>0){
     ctx.fillStyle='rgba(200,30,30,'+(P.hurtT*0.55)+')';
     ctx.fillRect(0,0,w,h);
   }
-  if(P.hp<30 && !P.dead){
+  if(P.hp<30 && !P.dead && !RAID.isBase){
     const a=0.15+0.1*Math.sin(RAID.time*6);
     const g=ctx.createRadialGradient(w/2,h/2,h*0.3,w/2,h/2,h*0.75);
     g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(160,20,20,'+a+')');
@@ -796,6 +916,14 @@ function drawScreenFx(){
 
 function drawCrosshair(){
   if(P.dead) return;
+  const x=mouse.x,y=mouse.y;
+  if(RAID.isBase){ // simple dot cursor in the safe zone
+    ctx.fillStyle='#e8e2d9';
+    ctx.beginPath(); ctx.arc(x,y,3,0,7); ctx.fill();
+    ctx.strokeStyle='#e8e2d966';
+    ctx.beginPath(); ctx.arc(x,y,7,0,7); ctx.stroke();
+    return;
+  }
   const slot=activeWeaponSlot();
   let gap=8;
   if(slot && ITEMS[slot.id].type==='gun'){
@@ -803,7 +931,6 @@ function drawCrosshair(){
     const moveAdd=P.moving?(P.speedNow/230)*3:0;
     gap=6+(gs.spread+P.heat+moveAdd)*2.2;
   }
-  const x=mouse.x,y=mouse.y;
   ctx.strokeStyle='#e8e2d9'; ctx.lineWidth=1.6;
   ctx.beginPath();
   ctx.moveTo(x-gap-6,y); ctx.lineTo(x-gap,y);
@@ -830,7 +957,7 @@ function drawPlayer(){
     const d=ITEMS[slot.id];
     if(d.type==='gun'){
       ctx.fillStyle='#2b2f38';
-      const len=d.ammo==='ammo_762'||d.id==='pumpgun'?20:14;
+      const len=d.ammo==='ammo_762'||d.ammo==='ammo_12'?20:14;
       ctx.fillRect(6,4,len,4);
       ctx.fillStyle='#454b58'; ctx.fillRect(6,4,5,5);
       if(slot.att&&slot.att.muzzle){ ctx.fillStyle='#111'; ctx.fillRect(6+len,4.5,6,3); }
@@ -842,7 +969,6 @@ function drawPlayer(){
       ctx.rotate(-(sw-0.3));
     }
   }
-  if(P.swingAnim>0) P.swingAnim-=1/60;
   // starburst body — the claude creature
   ctx.fillStyle='#d97757';
   for(let i=0;i<8;i++){
@@ -859,42 +985,53 @@ function drawPlayer(){
   ctx.fillStyle='#1a1a1a';
   ctx.beginPath(); ctx.arc(4.9,-3.2,1.2,0,7); ctx.arc(4.9,3.2,1.2,0,7); ctx.fill();
   ctx.restore();
-  // channel bar handled by HUD
 }
 
-function drawDuck(e){
+function drawZombie(e){
   const d=e.def;
+  // shadow (not rotated)
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(e.x,e.y+8,e.r,e.r*0.45,0,0,7); ctx.fill();
   ctx.save();
   ctx.translate(e.x,e.y);
-  ctx.fillStyle='rgba(0,0,0,0.3)';
-  ctx.beginPath(); ctx.ellipse(0,8,e.r,e.r*0.45,0,0,7); ctx.fill();
   ctx.rotate(e.dir);
   if(e.hurtT>0){ ctx.filter='brightness(1.9)'; }
-  // tail
+  const shamble=Math.sin(performance.now()/220 + e.home.x)*0.12;
+  // reaching arms
   ctx.fillStyle=d.color;
-  ctx.beginPath(); ctx.moveTo(-e.r-5,0); ctx.lineTo(-e.r+2,-5); ctx.lineTo(-e.r+2,5); ctx.closePath(); ctx.fill();
-  // body
-  ctx.beginPath(); ctx.ellipse(0,0,e.r,e.r*0.82,0,0,7); ctx.fill();
-  ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.2; ctx.stroke();
-  // wing
-  ctx.fillStyle='rgba(0,0,0,0.14)';
-  ctx.beginPath(); ctx.ellipse(-2,0,e.r*0.55,e.r*0.4,0,0,7); ctx.fill();
-  // gun
-  if(d.atk.kind==='gun'){
-    ctx.fillStyle='#2b2f38'; ctx.fillRect(4,5,e.type==='heavy'?17:12,3.4);
+  ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.2;
+  for(const s of [-1,1]){
+    ctx.save();
+    ctx.rotate(s*(0.4+shamble*s));
+    ctx.beginPath(); ctx.ellipse(e.r*0.9,0,e.r*0.62,3.4,0,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#c9b892'; // hands
+    ctx.beginPath(); ctx.arc(e.r*1.42,0,3,0,7); ctx.fill();
+    ctx.fillStyle=d.color;
+    ctx.restore();
   }
-  // head + beak
-  ctx.fillStyle=d.color;
-  ctx.beginPath(); ctx.arc(e.r*0.62,0,e.r*0.55,0,7); ctx.fill(); ctx.stroke();
-  ctx.fillStyle='#e8912d';
-  ctx.beginPath(); ctx.moveTo(e.r*1.15,0); ctx.lineTo(e.r*0.75,-3.4); ctx.lineTo(e.r*0.75,3.4); ctx.closePath(); ctx.fill();
-  // eye
-  ctx.fillStyle=e.type==='feral'?'#e02020':'#1a1a1a';
-  ctx.beginPath(); ctx.arc(e.r*0.72,-3,1.6,0,7); ctx.fill();
-  // helmet for heavies
-  if(e.type==='heavy'){
-    ctx.fillStyle='#3d4654';
-    ctx.beginPath(); ctx.arc(e.r*0.62,0,e.r*0.6,-Math.PI*0.95,Math.PI*0.35); ctx.fill();
+  // torso (shoulders)
+  ctx.beginPath(); ctx.ellipse(0,0,e.r,e.r*0.85,0,0,7); ctx.fill(); ctx.stroke();
+  // torn clothes patch
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(-e.r*0.25,e.r*0.2,e.r*0.5,e.r*0.35,0.5,0,7); ctx.fill();
+  // brute pauldrons
+  if(e.type==='brute'){
+    ctx.fillStyle='#41564a';
+    ctx.beginPath(); ctx.arc(0,-e.r*0.75,e.r*0.4,0,7); ctx.arc(0,e.r*0.75,e.r*0.4,0,7); ctx.fill();
+  }
+  // head
+  ctx.fillStyle='#b7c789';
+  if(e.type==='runner') ctx.fillStyle='#cfa87a';
+  if(e.type==='brute') ctx.fillStyle='#8fa892';
+  ctx.beginPath(); ctx.arc(e.r*0.4,0,e.r*0.52,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.stroke();
+  // eyes — dull red
+  ctx.fillStyle=e.state==='combat'?'#ff3b2b':'#7a1f1f';
+  ctx.beginPath(); ctx.arc(e.r*0.72,-3.2,1.7,0,7); ctx.arc(e.r*0.72,3.2,1.7,0,7); ctx.fill();
+  // spitter's glowing maw
+  if(e.type==='spitter'){
+    ctx.fillStyle='#c8f04a';
+    ctx.beginPath(); ctx.arc(e.r*0.88,0,2.8,0,7); ctx.fill();
   }
   ctx.filter='none';
   ctx.restore();
@@ -903,45 +1040,20 @@ function drawDuck(e){
     ctx.fillStyle='#000a'; ctx.fillRect(e.x-14,e.y-e.r-11,28,4);
     ctx.fillStyle='#e05252'; ctx.fillRect(e.x-14,e.y-e.r-11,28*(e.hp/e.maxhp),4);
   }
-  if(e.state==='investigate'){
+  // awareness icon: ! spotted you · ? searching · 💤 oblivious
+  ctx.textAlign='center';
+  if(e.state==='combat'){
+    ctx.fillStyle='#ff5a4a'; ctx.font='bold 15px sans-serif';
+    ctx.fillText('!', e.x, e.y-e.r-15);
+  }else if(e.state==='investigate'){
     ctx.fillStyle='#ffd257'; ctx.font='bold 14px sans-serif';
-    ctx.fillText('?', e.x-3, e.y-e.r-14);
+    ctx.fillText('?', e.x, e.y-e.r-15);
+  }else{
+    ctx.globalAlpha=0.75; ctx.font='11px sans-serif';
+    ctx.fillText('💤', e.x, e.y-e.r-13);
+    ctx.globalAlpha=1;
   }
-}
-
-const dog={x:0,y:0,dir:0,phase:0};
-function updateDog(dt){
-  const tx=P.x-Math.cos(P.aim)*34, ty=P.y-Math.sin(P.aim)*34;
-  const d=Math.hypot(tx-dog.x,ty-dog.y);
-  if(d>26){
-    const sp=Math.min(d*4, P.speedNow*1.25+40);
-    const a=Math.atan2(ty-dog.y,tx-dog.x);
-    const np=collideCircle(RAID.world, dog.x+Math.cos(a)*sp*dt, dog.y+Math.sin(a)*sp*dt, 8);
-    dog.dir=lerp2Angle(dog.dir,a,dt*8);
-    dog.x=np.x; dog.y=np.y;
-    dog.phase+=dt*12;
-  }
-  if(d>600){ dog.x=P.x; dog.y=P.y; } // teleport if left far behind
-}
-function drawDog(){
-  ctx.save();
-  ctx.translate(dog.x,dog.y);
-  ctx.fillStyle='rgba(0,0,0,0.3)';
-  ctx.beginPath(); ctx.ellipse(0,5,9,4,0,0,7); ctx.fill();
-  ctx.rotate(dog.dir);
-  // tail wag
-  ctx.strokeStyle='#8a6a42'; ctx.lineWidth=3; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(-8,0);
-  ctx.lineTo(-13, Math.sin(performance.now()/120)*4); ctx.stroke();
-  ctx.fillStyle='#8a6a42';
-  ctx.beginPath(); ctx.ellipse(0,0,8.5,6,0,0,7); ctx.fill();
-  ctx.beginPath(); ctx.arc(7,0,4.6,0,7); ctx.fill();
-  ctx.fillStyle='#6e5433';
-  ctx.beginPath(); ctx.arc(5.4,-3.4,2,0,7); ctx.arc(5.4,3.4,2,0,7); ctx.fill(); // ears
-  ctx.fillStyle='#3b2c18';
-  ctx.beginPath(); ctx.arc(10.6,0,1.7,0,7); ctx.fill(); // nose
-  ctx.fillStyle='#d97757'; ctx.fillRect(2,-5.5,2,11); // collar
-  ctx.restore();
+  ctx.textAlign='left';
 }
 
 // -------- world furniture ----------------------------------------------------
@@ -981,15 +1093,16 @@ function drawContainer(c){
         ctx.globalAlpha=1;
       }
       break;
-    case 'duckcorpse':{
-      const col=(ENEMY_DEFS[c.duckType]||ENEMY_DEFS.scav).color;
+    case 'zcorpse':{
+      const col=(ENEMY_DEFS[c.zType]||ENEMY_DEFS.shambler).color;
       ctx.rotate(0.9);
       ctx.fillStyle=col; ctx.globalAlpha=0.8;
       ctx.beginPath(); ctx.ellipse(0,0,14,8,0,0,7); ctx.fill();
-      ctx.beginPath(); ctx.arc(10,2,6,0,7); ctx.fill();
+      ctx.fillStyle='#b7c789';
+      ctx.beginPath(); ctx.arc(11,2,5.5,0,7); ctx.fill();
       ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=1.4;
       ctx.beginPath(); // X eyes
-      ctx.moveTo(8,0); ctx.lineTo(11,3); ctx.moveTo(11,0); ctx.lineTo(8,3);
+      ctx.moveTo(9,0); ctx.lineTo(12,3); ctx.moveTo(12,0); ctx.lineTo(9,3);
       ctx.stroke();
       break;}
     case 'pcorpse':
@@ -1035,9 +1148,85 @@ function drawExtractions(){
   }
 }
 
+// -------- home base stations --------------------------------------------------
+function drawStations(){
+  const now=performance.now();
+  for(const st of RAID.world.stations){
+    ctx.save();
+    ctx.translate(st.x,st.y);
+    switch(st.type){
+      case 'exit':
+        ctx.fillStyle='#54462c'; ctx.fillRect(-12,-16,4,34); ctx.fillRect(8,-16,4,34);
+        ctx.fillStyle='#7a6a4a';
+        for(let i=0;i<5;i++) ctx.fillRect(-12,-14+i*7,24,3);
+        ctx.fillStyle='rgba(87,217,143,'+(0.5+0.3*Math.sin(now/350))+')';
+        ctx.font='bold 16px sans-serif'; ctx.textAlign='center';
+        ctx.fillText('▲',0,-22);
+        break;
+      case 'stash':
+        ctx.fillStyle='#00000044'; ctx.fillRect(-16,-8,34,24);
+        ctx.fillStyle='#8a6636'; ctx.fillRect(-17,-13,34,24);
+        ctx.fillStyle='#6e5024'; ctx.fillRect(-17,-13,34,9);
+        ctx.strokeStyle='#43310f'; ctx.strokeRect(-17,-13,34,24);
+        ctx.fillStyle='#d9a957'; ctx.fillRect(-3,-6,6,6);
+        break;
+      case 'bed':
+        ctx.fillStyle='#3d4654'; ctx.fillRect(-14,-20,28,40);
+        ctx.fillStyle='#5a6474'; ctx.fillRect(-12,-18,24,36);
+        ctx.fillStyle='#e8e4dc'; ctx.fillRect(-12,-18,24,10);
+        ctx.strokeStyle='#23262e'; ctx.strokeRect(-14,-20,28,40);
+        break;
+      case 'trader':
+        // counter
+        ctx.fillStyle='#6e5024'; ctx.fillRect(-20,10,40,8);
+        ctx.strokeStyle='#43310f'; ctx.strokeRect(-20,10,40,8);
+        // Boris
+        ctx.fillStyle='rgba(0,0,0,0.3)';
+        ctx.beginPath(); ctx.ellipse(0,6,11,4,0,0,7); ctx.fill();
+        ctx.fillStyle='#5c5148'; // coat
+        ctx.beginPath(); ctx.ellipse(0,-2,11,9,0,0,7); ctx.fill();
+        ctx.fillStyle='#c9a37a'; // head
+        ctx.beginPath(); ctx.arc(0,-8,6,0,7); ctx.fill();
+        ctx.fillStyle='#4a3a26'; // magnificent beard
+        ctx.beginPath(); ctx.arc(0,-5.5,5,0.3,Math.PI-0.3); ctx.fill();
+        ctx.fillStyle='#1a1a1a';
+        ctx.beginPath(); ctx.arc(-2,-9,0.9,0,7); ctx.arc(2,-9,0.9,0,7); ctx.fill();
+        break;
+      case 'upgrade':
+        ctx.fillStyle='#6e5024'; ctx.fillRect(-18,-10,36,20);
+        ctx.strokeStyle='#43310f'; ctx.strokeRect(-18,-10,36,20);
+        ctx.fillStyle='#9aa2b0'; ctx.fillRect(-12,-5,10,3); // wrench-ish
+        ctx.fillStyle='#d97757'; ctx.fillRect(4,-6,6,6);
+        ctx.fillStyle='#454b58'; ctx.fillRect(2,3,12,3);
+        break;
+      case 'sewer':
+        ctx.strokeStyle='rgba(232,226,217,0.8)';
+        ctx.lineWidth=2; ctx.setLineDash([6,5]);
+        ctx.beginPath(); ctx.arc(0,0,16,0,7); ctx.stroke();
+        ctx.setLineDash([]);
+        for(let i=0;i<3;i++){
+          const a=i/3*Math.PI*2 + now/2000;
+          ctx.fillStyle='#e8d9a0';
+          ctx.fillRect(Math.cos(a)*22-1.5,Math.sin(a)*22-4,3,7);
+          ctx.fillStyle='rgba(255,170,60,'+(0.55+0.35*Math.sin(now/90+i*2))+')';
+          ctx.beginPath(); ctx.arc(Math.cos(a)*22,Math.sin(a)*22-5,2.5,0,7); ctx.fill();
+        }
+        ctx.fillStyle='rgba(164,93,224,'+(0.25+0.15*Math.sin(now/500))+')';
+        ctx.beginPath(); ctx.arc(0,0,9,0,7); ctx.fill();
+        break;
+    }
+    // label
+    ctx.fillStyle='rgba(232,226,217,0.55)';
+    ctx.font='11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(st.label, 0, -30);
+    ctx.textAlign='left';
+    ctx.restore();
+  }
+}
+
 // -------- minimap ------------------------------------------------------------
 function drawMinimap(){
-  const s=168/(MW*TILE);
+  const s=168/(RAID.world.w*TILE);
   mmCtx.clearRect(0,0,168,168);
   mmCtx.drawImage(RAID.mmTerrain,0,0);
   for(const z of RAID.world.extractions){
