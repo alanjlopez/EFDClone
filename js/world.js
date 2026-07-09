@@ -345,13 +345,15 @@ function genBaseWorld(){
   for(let y=2;y<h-2;y++) for(let x=2;x<w-2;x++) t[y*w+x]=T.FLOOR; // single hall
   const S=TILE;
   const stations=[
-    {type:'exit',    x:15*S,   y:3.2*S,  label:'Deploy to Ground Zero'},
-    {type:'stash',   x:4.2*S,  y:5*S,    label:'Open Stash'},
-    {type:'bed',     x:4.2*S,  y:13*S,   label:'Rest'},
-    {type:'medbay',  x:25.4*S, y:5*S,    label:'Use Med Bay'},
-    {type:'gunsmith',x:25.4*S, y:13*S,   label:'Use Gunsmith'},
-    {type:'equip',   x:20*S,   y:16.2*S, label:'Use Equipment Bench'},
-    {type:'upgrade', x:11*S,   y:16.2*S, label:'Use Workbench'},
+    {type:'exit',     x:15*S,   y:3.2*S,  label:'Deploy to Ground Zero'},
+    {type:'contracts',x:9.5*S,  y:3.4*S,  label:'Contract Board'},
+    {type:'skills',   x:20.5*S, y:3.4*S,  label:'Skills Terminal'},
+    {type:'stash',    x:4.2*S,  y:6.5*S,  label:'Open Stash'},
+    {type:'bed',      x:4.2*S,  y:13*S,   label:'Rest'},
+    {type:'medbay',   x:25.4*S, y:6.5*S,  label:'Use Med Bay'},
+    {type:'gunsmith', x:25.4*S, y:13*S,   label:'Use Gunsmith'},
+    {type:'equip',    x:20*S,   y:16.2*S, label:'Use Equipment Bench'},
+    {type:'upgrade',  x:11*S,   y:16.2*S, label:'Use Workbench'},
   ];
   return {t, w, h, stations, containers:[], extractions:[], enemySpawns:[],
           playerSpawn:{x:15*S, y:9.5*S}};

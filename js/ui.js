@@ -328,6 +328,14 @@ function uiUpdateHUD(){
   if(!RAID.isBase){ tl.style.display='block'; tl.textContent=TOD[RAID.tod].label;
     tl.className='tod-'+RAID.tod; }
   else tl.style.display='none';
+  // active-contract tracker
+  const ch=$('contracthud');
+  if(!RAID.isBase && G.save.contract){
+    const c=G.save.contract, def=CONTRACT_DEFS[c.id], prog=Math.min(c.need, contractProgress(RAID.extractZone));
+    const done=prog>=c.need;
+    ch.style.display='block'; ch.className=done?'done':'';
+    ch.innerHTML=def.icon+' <b>'+def.name+'</b> '+prog+'/'+c.need+(done?' ✔ extract!':'');
+  }else ch.style.display='none';
   if(!RAID.isBase){
     const t=RAID.time|0;
     $('timer').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
@@ -463,15 +471,105 @@ function consumeItem(id,want){
   return want-need;
 }
 
-// format a {mat:n} cost, coloring shortfalls red
+// apply the Thrifty skill discount to a {mat:n} cost
+function effCost(cost){
+  const mul=1+skillSum('craftMul'), out={};
+  for(const m in cost) out[m]=Math.max(1, Math.round(cost[m]*mul));
+  return out;
+}
+// format a cost, coloring shortfalls red
 function costHtml(cost){
-  return Object.keys(cost).map(m=>{
-    const have=countItem(m), need=cost[m];
+  const c=effCost(cost);
+  return Object.keys(c).map(m=>{
+    const have=countItem(m), need=c[m];
     return '<span style="color:'+(have>=need?'#b8c0d0':'#e05252')+'">'+need+'× '+ITEMS[m].icon+'</span>';
   }).join(' ');
 }
-const canAfford=cost=>Object.keys(cost).every(m=>countItem(m)>=cost[m]);
-function payCost(cost){ for(const m in cost) consumeItem(m,cost[m]); }
+const canAfford=cost=>{ const c=effCost(cost); return Object.keys(c).every(m=>countItem(m)>=c[m]); };
+function payCost(cost){ const c=effCost(cost); for(const m in c) consumeItem(m,c[m]); }
+
+// ---------------------------------------------------------------------------
+// skills terminal
+// ---------------------------------------------------------------------------
+function renderSkills(L){
+  let h='<p class="benchblurb">Skill points: <b style="color:var(--stam)">'+G.save.skillPts+'</b>'+
+        ' · XP '+G.save.xp+' / '+xpForNext(G.save.level)+' to next level</p>';
+  for(const br of SKILL_BRANCHES){
+    h+='<div class="sub">'+br+'</div>';
+    for(const id in SKILLS){
+      const s=SKILLS[id]; if(s.branch!==br) continue;
+      const rank=(G.save.skills[id]||0), maxed=rank>=s.max, can=!maxed && G.save.skillPts>0;
+      h+='<div class="craftrow"><span class="ico">'+s.icon+'</span>'+
+        '<span class="pn">'+s.name+' <span style="color:var(--dim);font-size:11px">'+s.desc+'</span></span>'+
+        '<span class="cst">'+rank+'/'+s.max+'</span>'+
+        (maxed?'<span class="lk">MAX</span>'
+              :'<button class="small" data-skill="'+id+'"'+(can?'':' disabled')+'>+</button>')+
+        '</div>';
+    }
+  }
+  h+='<div class="panelhint">Earn XP from kills, extractions and contracts. Effects apply on your next deploy.</div>';
+  L.innerHTML=h;
+  L.querySelectorAll('[data-skill]').forEach(b=>b.addEventListener('click',()=>investSkill(b.dataset.skill)));
+}
+function investSkill(id){
+  const s=SKILLS[id]; const rank=G.save.skills[id]||0;
+  if(rank>=s.max || G.save.skillPts<=0) return;
+  G.save.skills[id]=rank+1; G.save.skillPts--;
+  sfx('levelup'); uiToast(s.name+' → rank '+(rank+1),'good');
+  saveGame(); uiRefreshAll();
+}
+
+// ---------------------------------------------------------------------------
+// contract board
+// ---------------------------------------------------------------------------
+function rerollContracts(){
+  const ids=CONTRACT_IDS.slice();
+  for(let i=ids.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [ids[i],ids[j]]=[ids[j],ids[i]]; }
+  G.save.offered=ids.slice(0,3).map(id=>{
+    const d=CONTRACT_DEFS[id];
+    return {id, need: d.min + ((Math.random()*(d.max-d.min+1))|0)};
+  });
+}
+function contractRewardText(def){
+  return Object.keys(def.reward).map(id=>{
+    const nm = id==='t_random' ? 'Random Totem' : ITEMS[id].name;
+    const ic = id==='t_random' ? '🎲' : ITEMS[id].icon;
+    return def.reward[id]+'× '+ic+' '+nm;
+  }).join(', ');
+}
+function renderContracts(L){
+  if(!G.save.offered) rerollContracts();
+  let h='';
+  const active=G.save.contract;
+  if(active){
+    const def=CONTRACT_DEFS[active.id];
+    h+='<div class="sub">Active Contract</div>'+
+       '<div class="upcard"><h4>'+def.icon+' '+def.name+'</h4>'+
+       '<p>'+def.text(active.need)+'</p>'+
+       '<div class="cost">Reward: +'+def.xp+' XP, '+contractRewardText(def)+'</div>'+
+       '<button class="small" data-abandon="1">Abandon</button></div>';
+  }else{
+    h+='<div class="sub">Available Contracts</div>';
+    G.save.offered.forEach((c,i)=>{
+      const def=CONTRACT_DEFS[c.id];
+      h+='<div class="upcard"><h4>'+def.icon+' '+def.name+'</h4>'+
+         '<p>'+def.text(c.need)+'</p>'+
+         '<div class="cost">Reward: +'+def.xp+' XP, '+contractRewardText(def)+'</div>'+
+         '<button class="small" data-accept="'+i+'">Accept</button></div>';
+    });
+  }
+  h+='<div class="panelhint">Accept one contract before deploying. It pays out when you extract having met the goal.</div>';
+  L.innerHTML=h;
+  L.querySelectorAll('[data-accept]').forEach(b=>b.addEventListener('click',()=>acceptContract(+b.dataset.accept)));
+  const ab=L.querySelector('[data-abandon]');
+  if(ab) ab.addEventListener('click',()=>{ G.save.contract=null; sfx('click'); saveGame(); uiRefreshAll(); });
+}
+function acceptContract(i){
+  const c=G.save.offered[i]; if(!c) return;
+  G.save.contract={id:c.id, need:c.need};
+  sfx('contract'); uiToast('Contract accepted: '+CONTRACT_DEFS[c.id].name,'good');
+  saveGame(); uiRefreshAll();
+}
 
 function renderStationContent(){
   const L=$('stationcontent');
@@ -479,8 +577,12 @@ function renderStationContent(){
   const bench=BENCH_DEFS[type];
   $('stationtitle').textContent =
     type==='stash' ? '📦 Stash — '+G.save.stash.length+' slots' :
+    type==='skills' ? '🧠 Skills Terminal — Lv '+G.save.level :
+    type==='contracts' ? '📋 Contract Board' :
     bench ? bench.icon+' '+bench.name+' — Lv '+(G.save.benches[type]||1) : '🔧 Workbench';
 
+  if(type==='skills'){ renderSkills(L); return; }
+  if(type==='contracts'){ renderContracts(L); return; }
   if(type==='stash'){
     L.innerHTML='<div class="stashgrid" id="st-stashgrid"></div>'+
       '<div class="panelhint">Click = move between stash & backpack · Drag for precise placement · Right-click = equip</div>';
@@ -581,12 +683,13 @@ function uiShowDeath(cause,lost,hadOldCorpse){
     (hadOldCorpse?'<br><br><span style="color:var(--hp)">Your previous corpse stash was lost to the horde.</span>':'')+
     '<br><br>🔒 Secure pouch items and your ⚙️ Rust Pistol stay with you.';
 }
-function uiShowSummary(zone,kills,time,items,mats){
+function uiShowSummary(zone,kills,time,items,mats,contractMsg){
   uiShowScreen('summary');
   const t=time|0;
   $('sumdetail').innerHTML=
     'Extracted via <b>'+zone+'</b> in <b>'+Math.floor(t/60)+':'+String(t%60).padStart(2,'0')+'</b>.<br>'+
-    'Zombies put down: <b>'+kills+'</b><br>'+
+    'Zombies put down: <b>'+kills+'</b> · Level <b>'+G.save.level+'</b><br>'+
     'Backpack: <b>'+items+' item stacks</b> · <b style="color:var(--energy)">'+mats+'</b> raw materials<br>'+
-    'Stash the keepers, craft at the benches, expand the bunker.';
+    (contractMsg?'<span style="color:var(--stam)">'+contractMsg+'</span><br>':'')+
+    'Stash the keepers, craft at the benches, spend your skill points.';
 }

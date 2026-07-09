@@ -344,13 +344,66 @@ function recycleYield(slot){
 }
 function isRecyclable(slot){ return slot && recycleYield(slot).length>0; }
 
+// ---------- progression: XP, levels, skill tree ------------------------------
+// XP from kills & extractions → levels → skill points spent on nodes below.
+function xpForNext(level){ return 60 + level*45; } // xp needed to reach level+1
+const SKILLS = {
+  // --- Survival ---
+  vitality: {branch:'Survival', name:'Vitality',   icon:'❤️', max:3, per:{maxHp:15},
+             desc:'+15 max HP per rank'},
+  plating:  {branch:'Survival', name:'Plating',    icon:'🛡️', max:3, per:{maxShield:12},
+             desc:'+12 max shield per rank'},
+  recharge: {branch:'Survival', name:'Recharge',   icon:'🔌', max:2, per:{shieldRegen:5},
+             desc:'+5 shield regen/s per rank'},
+  mule:     {branch:'Survival', name:'Pack Mule',  icon:'🎒', max:3, per:{carry:6},
+             desc:'+6 kg carry weight per rank'},
+  // --- Ranged ---
+  quickhand:{branch:'Ranged',   name:'Quick Hands',icon:'⚡', max:3, per:{reloadMul:-0.1},
+             desc:'−10% reload time per rank'},
+  steady:   {branch:'Ranged',   name:'Steady Aim', icon:'🎯', max:3, per:{spreadMul:-0.12},
+             desc:'−12% weapon spread per rank'},
+  fastswap: {branch:'Ranged',   name:'Fast Swap',  icon:'🔁', max:2, per:{swapMul:-0.3},
+             desc:'−30% weapon swap time per rank'},
+  // --- Crafting ---
+  scavenger:{branch:'Crafting', name:'Scavenger',  icon:'⛏️', max:3, per:{mineMul:0.34},
+             desc:'+34% mining yield per rank'},
+  thrifty:  {branch:'Crafting', name:'Thrifty',    icon:'🔧', max:2, per:{craftMul:-0.15},
+             desc:'−15% craft & upgrade cost per rank'},
+  salvage:  {branch:'Crafting', name:'Salvage',    icon:'♻️', max:2, per:{recycleBonus:1},
+             desc:'+1 material per recycle per rank'},
+};
+const SKILL_BRANCHES = ['Survival','Ranged','Crafting'];
+
+// ---------- contracts (quests) -----------------------------------------------
+// pick one at the board; it tracks a stat during the raid and pays out on a
+// successful extraction. reward: materials/items ('t_random' = a random totem).
+const CONTRACT_DEFS = {
+  cull:  {name:'Cull the Horde', icon:'🧟', track:'kills',      min:25, max:40,
+          text:n=>'Put down '+n+' zombies, then extract.',        xp:70,  reward:{scrap:6, wires:4}},
+  elite: {name:'Elite Hunt',     icon:'◆',  track:'eliteKills', min:2,  max:3,
+          text:n=>'Kill '+n+' elite zombies, then extract.',      xp:120, reward:{feather:6, medkit:1}},
+  titan: {name:'Titan Slayer',   icon:'☠',  track:'bossKilled', min:1,  max:1,
+          text:n=>'Slay a Rotting Titan and extract.',            xp:220, reward:{t_random:1, ak_rustov:1}},
+  scav:  {name:'Scavenger Run',  icon:'📦', track:'looted',     min:10, max:16,
+          text:n=>'Loot '+n+' containers, then extract.',         xp:80,  reward:{wood:8, stone:6}},
+  deep:  {name:'Go Deep',        icon:'🔴', track:'redExtract', min:1,  max:1,
+          text:n=>'Extract from a Tier-3 (red) zone.',            xp:160, reward:{silencer:1, scrap:8}},
+};
+const CONTRACT_IDS = Object.keys(CONTRACT_DEFS);
+
 // ---------- starter kit ------------------------------------------------------
-const SAVE_VER = 4;
+const SAVE_VER = 5;
 function freshBenches(){ return {medbay:1, gunsmith:1, equip:1}; }
+function freshProgress(s){
+  s.level=s.level||1; s.xp=s.xp||0; s.skillPts=s.skillPts||0;
+  s.skills=s.skills||{}; s.contract=s.contract||null; s.offered=s.offered||null;
+  s.contractsDone=s.contractsDone||0;
+  return s;
+}
 function starterSave(){
   const inv = new Array(22).fill(null);
   inv[0]={id:'bandage',q:2}; inv[1]={id:'water',q:1}; inv[2]={id:'bread',q:1};
-  return {
+  return freshProgress({
     ver:SAVE_VER,
     stash:new Array(48).fill(null),
     inv,
@@ -358,7 +411,7 @@ function starterSave(){
     pouch:[null,null], pouchSlots:2,
     upgrades:{}, benches:freshBenches(), corpse:null,
     stats:{raids:0, extracts:0, deaths:0, kills:0},
-  };
+  });
 }
 // renamed item ids, applied across every save slot on migration
 const ID_REMAP = {akduckov:'ak_rustov', duckbat:'nailbat', goldegg:'goldbar'};
@@ -386,6 +439,10 @@ function migrateSave(s){
       if(arr[i] && arr[i].id==='cash') arr[i]=null; else remapSlot(arr[i]); } };
     scrub(s.inv); scrub(s.stash); scrub(s.pouch);
     if(s.eq) for(const k in s.eq){ if(s.eq[k] && s.eq[k].id==='cash') s.eq[k]=null; else remapSlot(s.eq[k]); }
+  }
+  if(s.ver===4){
+    s.ver=5;
+    freshProgress(s);              // XP, levels, skill tree, contracts
   }
   return s.ver===SAVE_VER ? s : null;
 }

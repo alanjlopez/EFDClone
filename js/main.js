@@ -82,10 +82,19 @@ function deploy(){
   saveGame();
 }
 
-// XP — a fuller skill-tree lands in the progression pass; for now, bank it
+// XP & leveling — each level grants a skill point
 function awardXP(n){
   if(!G.save) return;
   G.save.xp=(G.save.xp||0)+n;
+  let leveled=0;
+  while(G.save.xp >= xpForNext(G.save.level)){
+    G.save.xp-=xpForNext(G.save.level);
+    G.save.level++; G.save.skillPts++; leveled++;
+  }
+  if(leveled){
+    sfx('levelup');
+    uiToast('⬆ LEVEL '+G.save.level+'! +'+leveled+' skill point'+(leveled>1?'s':'')+' — spend at the Skills Terminal.','good');
+  }
 }
 
 // game.js calls these ---------------------------------------------------------
@@ -101,9 +110,11 @@ function handleExtract(zone){
   }
   syncCorpse();
   G.save.stats.extracts++;
+  awardXP(20 + RAID.kills*2); // extraction bonus + per-kill XP settle
+  const contractMsg=settleContract(zone);
   saveGame();
   G.mode='summary';
-  setTimeout(()=>uiShowSummary(zone.name, RAID.kills, RAID.time, count, mats), 600);
+  setTimeout(()=>uiShowSummary(zone.name, RAID.kills, RAID.time, count, mats, contractMsg), 600);
 }
 function handlePlayerDeath(cause){
   sfx('groandie'); sfx('hurt');
@@ -126,6 +137,33 @@ function handlePlayerDeath(cause){
   G.mode='dead';
   setTimeout(()=>uiShowDeath(cause,lost,hadOld), 1100);
 }
+// how far along is the active contract, given this raid's tally?
+function contractProgress(zone){
+  const c=G.save.contract; if(!c || !RAID) return 0;
+  const def=CONTRACT_DEFS[c.id];
+  if(def.track==='redExtract') return RAID.redVisited ? 1 : 0; // reached a red zone
+  return RAID[def.track]||0;
+}
+// pay out the active contract if this extraction completed it
+function settleContract(zone){
+  const c=G.save.contract; if(!c) return null;
+  const def=CONTRACT_DEFS[c.id];
+  if(contractProgress(zone) < c.need) return null;
+  // grant reward
+  const parts=[];
+  for(const id in def.reward){
+    let rid=id, q=def.reward[id];
+    if(id==='t_random'){ const t=['t_sturdy','t_swift','t_owl','t_vamp','t_plume']; rid=t[(Math.random()*t.length)|0]; }
+    const slot={id:rid,q}; if(ITEMS[rid].type==='gun'){ slot.q=1; slot.ammo=0; slot.att={}; }
+    if(invAddItem(G.save.stash,slot)) invAddItem(G.save.inv,slot);
+    parts.push(q+'× '+ITEMS[rid].icon+' '+ITEMS[rid].name);
+  }
+  awardXP(def.xp);
+  G.save.contractsDone++;
+  G.save.contract=null; G.save.offered=null; // reroll the board next visit
+  return '✔ Contract complete: '+def.name+' — +'+def.xp+' XP, '+parts.join(', ');
+}
+
 // keep save.corpse in sync with the in-raid corpse container after a raid ends
 function syncCorpse(){
   if(!RAID) return;

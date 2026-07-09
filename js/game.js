@@ -76,6 +76,9 @@ function sfx(name){
     case 'slam':     noiseHit(0.45,0.4,500); tone(70,0.35,'sawtooth',0.18,30); break;
     case 'bossdie':  tone(150,0.7,'sawtooth',0.2,40); noiseHit(0.6,0.3,400);
                      setTimeout(()=>tone(90,0.5,'sawtooth',0.16,30),200); break;
+    case 'levelup':  tone(523,0.12,'sine',0.12); setTimeout(()=>tone(659,0.12,'sine',0.12),110);
+                     setTimeout(()=>tone(784,0.2,'sine',0.13),220); break;
+    case 'contract': tone(660,0.1,'sine',0.12,990); setTimeout(()=>tone(880,0.16,'sine',0.12),120); break;
     case 'chop':     noiseHit(0.08,0.22,900); tone(170,0.05,'square',0.08); break;
     case 'mine':     noiseHit(0.05,0.16,2400); tone(1100,0.04,'square',0.06); break;
     case 'break':    noiseHit(0.22,0.26,700); tone(120,0.12,'square',0.09,60); break;
@@ -99,6 +102,12 @@ function totemEff(key, def){
   }
   return v;
 }
+// sum of a skill effect across all invested ranks
+function skillSum(key){
+  let t=0; const sk=G.save.skills||{};
+  for(const id in SKILLS){ const p=SKILLS[id].per; if(p[key]!==undefined) t+=p[key]*(sk[id]||0); }
+  return t;
+}
 function calcWeight(){
   let w=0;
   const add=s=>{ if(s) w += (ITEMS[s.id].w||0)*(s.q||1); };
@@ -106,7 +115,7 @@ function calcWeight(){
   add(G.save.eq.g1); add(G.save.eq.g2); add(G.save.eq.melee);
   return w; // secure pouch is a weightless sink by design
 }
-const weightCap=()=> totemEff('weightMul', BASE_WEIGHT_CAP);
+const weightCap=()=> totemEff('weightMul', BASE_WEIGHT_CAP + skillSum('carry'));
 function countAmmo(ammoId){
   let n=0;
   for(const s of G.save.inv) if(s && s.id===ammoId) n+=s.q;
@@ -161,10 +170,11 @@ function activeWeaponSlot(){
 // area setup
 // ============================================================================
 function makePlayer(spawn){
+  const maxhp=100+skillSum('maxHp'), shieldMax=SHIELD_MAX+skillSum('maxShield');
   return {
     x:spawn.x, y:spawn.y, r:PLAYER_R,
-    aim:-Math.PI/2, hp:100, maxhp:100, stam:100,
-    shield:SHIELD_MAX, shieldMax:SHIELD_MAX, shieldRegenT:0,
+    aim:-Math.PI/2, hp:maxhp, maxhp, stam:100,
+    shield:shieldMax, shieldMax, shieldRegenT:0,
     active: G.save.eq.g1?0:(G.save.eq.g2?1:2),
     fireCd:0, reloadT:0, switchT:0, heat:0, swingT:0, swingAnim:0, use:null,
     hurtT:0, stamDelay:0, walkPhase:0, moving:false, dead:false, speedNow:0,
@@ -187,7 +197,7 @@ function startRaidState(){
     tod: world.tod || 'day',
     extractZone: null, extractT: 0, alarmT: 0, spawnT: 5,
     nodeHp: new Map(), // damaged-but-standing resource nodes
-    kills: 0, over: false,
+    kills: 0, eliteKills: 0, bossKilled: 0, looted: 0, redVisited: false, over: false,
   };
   for(const s of world.enemySpawns){
     const def = ENEMY_DEFS[s.type];
@@ -250,6 +260,7 @@ function updateRaid(dt){
     const z=zoneAt(RAID.world,P.x,P.y);
     if(z && z!==RAID.curZone){
       RAID.curZone=z;
+      if(z.def.tier>=3) RAID.redVisited=true; // for the 'Go Deep' contract
       uiToast('Entering <b>'+z.def.name+'</b> — Tier '+z.def.tier, z.def.tier>=3?'bad':'');
     }
   }
@@ -394,7 +405,7 @@ function updatePlayer(dt){
   // shield regenerates after a lull with no damage taken
   P.shieldRegenT=Math.max(0,P.shieldRegenT-dt);
   if(P.shieldRegenT<=0 && P.shield<P.shieldMax)
-    P.shield=Math.min(P.shieldMax, P.shield+SHIELD_REGEN*dt);
+    P.shield=Math.min(P.shieldMax, P.shield+(SHIELD_REGEN+skillSum('shieldRegen'))*dt);
   // encumbrance still burns stamina out in the field
   if(!inBase && calcWeight()>weightCap() && P.moving) P.stam=Math.max(0,P.stam-5*dt);
   // timers
@@ -473,7 +484,7 @@ function tryAttack(){
   P.fireCd=60/d.rpm;
   P.heat=Math.min(9, P.heat+gs.recoil);
   const moveAdd = P.moving ? (P.speedNow/230)*3 : 0;
-  let spreadDeg = gs.spread + P.heat + moveAdd;
+  let spreadDeg = (gs.spread + P.heat + moveAdd) * (1+skillSum('spreadMul'));
   const pellets=d.pellets||1;
   // bullets spawn at the body, not the muzzle — point-blank shots must connect
   const mx=P.x+Math.cos(P.aim)*6, my=P.y+Math.sin(P.aim)*6;
@@ -518,7 +529,8 @@ function chopNode(meleeDef){
       sfx('break');
       for(let i=0;i<10;i++)
         spawnPart(cx,cy,(Math.random()-0.5)*260,(Math.random()-0.5)*260,0.8,nd.color,3.5);
-      const drops=[{id:nd.drop[0], q:nd.drop[1]+Math.floor(Math.random()*(nd.drop[2]-nd.drop[1]+1))}];
+      const baseQ=nd.drop[1]+Math.floor(Math.random()*(nd.drop[2]-nd.drop[1]+1));
+      const drops=[{id:nd.drop[0], q:Math.round(baseQ*(1+skillSum('mineMul')))}];
       if(nd.bonus && Math.random()<nd.bonus[1]) drops.push({id:nd.bonus[0], q:1});
       for(const s of drops){
         const label=s.q+'× '+ITEMS[s.id].icon+' '+ITEMS[s.id].name;
@@ -544,14 +556,14 @@ function startReload(){
   const d=ITEMS[slot.id];
   if(d.type!=='gun' || P.reloadT>0 || (slot.ammo||0)>=d.mag) return;
   if(!d.inf && countAmmo(d.ammo)<=0){ uiToast('No '+ITEMS[d.ammo].name+' left!', 'bad'); sfx('click'); return; }
-  P.reloadT=d.reload; sfx('click');
+  P.reloadT=d.reload*(1+skillSum('reloadMul')); sfx('click');
 }
 
 function switchWeapon(idx){
   if(idx===P.active || P.dead) return;
   const tgt=[G.save.eq.g1,G.save.eq.g2,G.save.eq.melee][idx];
   if(!tgt) return;
-  P.active=idx; P.switchT=0.35; P.reloadT=0;
+  P.active=idx; P.switchT=0.35*(1+skillSum('swapMul')); P.reloadT=0;
   sfx('click'); uiUpdateWeapon();
 }
 
@@ -645,7 +657,9 @@ function updateInteract(){
     return;
   }
   uiPrompt(c ? '<b>E</b> — Search '+CONT_NAMES[c.type] : null);
-  if(c && keys._e){ keys._e=false; c.opened=true; uiOpenLoot(c); sfx('pickup'); }
+  if(c && keys._e){ keys._e=false;
+    if(!c.searched && c.type!=='pcorpse'){ c.searched=true; RAID.looted++; } // contract tally
+    c.opened=true; uiOpenLoot(c); sfx('pickup'); }
   keys._e=false;
 }
 function updateBaseInteract(){
@@ -1220,7 +1234,7 @@ function drawCrosshair(){
   if(slot && ITEMS[slot.id].type==='gun'){
     const gs=gunStats(slot);
     const moveAdd=P.moving?(P.speedNow/230)*3:0;
-    gap=6+(gs.spread+P.heat+moveAdd)*2.2;
+    gap=6+(gs.spread+P.heat+moveAdd)*(1+skillSum('spreadMul'))*2.2;
   }
   ctx.strokeStyle='#e8e2d9'; ctx.lineWidth=1.6;
   ctx.beginPath();
@@ -1546,6 +1560,23 @@ function drawStations(){
         ctx.fillStyle='#8a9099'; ctx.fillRect(-16,-9,32,18);
         ctx.fillStyle='#e8e4dc'; ctx.fillRect(-14,-7,20,14);
         ctx.fillStyle='#d04040'; ctx.fillRect(8,-6,4,12); ctx.fillRect(4,-2,12,4);
+        break;
+      case 'contracts': // pinboard with papers
+        ctx.fillStyle='#5a4630'; ctx.fillRect(-16,-13,32,26);
+        ctx.strokeStyle='#3a2c1a'; ctx.strokeRect(-16,-13,32,26);
+        ctx.fillStyle='#e8e2d9';
+        ctx.fillRect(-12,-9,9,11); ctx.fillRect(2,-9,10,8); ctx.fillRect(-11,4,12,7);
+        ctx.fillStyle='#d04040'; // pins
+        ctx.beginPath(); ctx.arc(-7,-9,1.4,0,7); ctx.arc(7,-9,1.4,0,7); ctx.arc(-5,4,1.4,0,7); ctx.fill();
+        break;
+      case 'skills': // glowing terminal
+        ctx.fillStyle='#1c2230'; ctx.fillRect(-13,-12,26,20);
+        ctx.strokeStyle='#3a4358'; ctx.strokeRect(-13,-12,26,20);
+        ctx.fillStyle='rgba(120,200,140,'+(0.5+0.3*Math.sin(now/300))+')';
+        ctx.fillRect(-10,-9,20,13);
+        ctx.fillStyle='#0d0f14';
+        ctx.fillRect(-8,-7,12,2); ctx.fillRect(-8,-3,8,2); ctx.fillRect(-8,1,14,2);
+        ctx.fillStyle='#2a3140'; ctx.fillRect(-9,8,18,3); // stand
         break;
     }
     // label
