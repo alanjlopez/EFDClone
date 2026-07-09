@@ -268,6 +268,17 @@ function genWorld(raidSeed){
       sq++;
     }
   }
+  // a scattering of extra base-level shufflers so the drop isn't quiet
+  let baseN=0, btries=0;
+  while(baseN<14 && btries++<700){
+    const x=rri(lrng,8,MW-8), y=rri(lrng,8,MH-8);
+    if(at(x,y)!==T.GRASS) continue;
+    const px=x*TILE, py=y*TILE;
+    if(Math.hypot(px-playerSpawn.x, py-playerSpawn.y)<440) continue;
+    const z=zoneAtT(x,y);
+    enemySpawns.push({type:'shambler', x:px, y:py, hpMul:z.def.buff.hp, dmgMul:z.def.buff.dmg});
+    baseN++;
+  }
 
   return {t, w:MW, h:MH, zones, zmap, buildings, containers, extractions,
           playerSpawn, enemySpawns, stations:[]};

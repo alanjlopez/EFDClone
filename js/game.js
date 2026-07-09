@@ -181,7 +181,7 @@ function startRaidState(){
     containers: world.containers,
     time: 0, storm: 'none', awareness:'hidden', curZone:null,
     weather: rweighted(Math.random, WEATHERS)[0],
-    extractZone: null, extractT: 0, alarmT: 0, spawnT: 8,
+    extractZone: null, extractT: 0, alarmT: 0, spawnT: 5,
     nodeHp: new Map(), // damaged-but-standing resource nodes
     kills: 0, over: false,
   };
@@ -286,7 +286,7 @@ function updateAwareness(){
 // ---------------------------------------------------------------------------
 function spawnInterval(){
   const ramp=clamp(RAID.time/480, 0, 1);
-  let iv=lerp(9, 2.2, ramp);
+  let iv=lerp(7.5, 1.8, ramp);
   if(RAID.extractZone) iv*=0.35;
   return iv;
 }

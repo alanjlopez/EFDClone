@@ -151,7 +151,7 @@ const ENEMY_DEFS = {
 const ZONE_DEFS = {
   outskirts:{name:'The Outskirts', tier:1, grass:['#36462f','#3d4d35'],
     scatter:{tree:0.020,bush:0.014,rock:0.004,crate:0.003}, crops:false, fences:3,
-    bld:{n:6, wMin:8,wMax:13, hMin:6,hMax:10},
+    bld:{n:4, wMin:13,wMax:19, hMin:10,hMax:14},
     contW:[['crate',55],['locker',20],['medbox',15],['weaponbox',10]],
     mats:[['scrap',20,1,2],['spoon',14,1,2],['bread',12,1,1],['soda',10,1,1],
           ['ammo_9',10,4,10],['tape',8,1,1],['cash',12,5,25]],
@@ -159,7 +159,7 @@ const ZONE_DEFS = {
     squadN:3, buff:{hp:1,dmg:1}},
   farm:{name:'Rotfield Farms', tier:1, grass:['#4a4d2e','#585c37'],
     scatter:{tree:0.008,bush:0.008,rock:0.003,crate:0.003}, crops:true, fences:9,
-    bld:{n:7, wMin:11,wMax:20, hMin:8,hMax:14}, // big barns
+    bld:{n:5, wMin:16,wMax:25, hMin:12,hMax:18}, // sprawling barns
     contW:[['crate',55],['locker',20],['medbox',15],['weaponbox',10]],
     mats:[['beans',18,1,1],['bread',16,1,2],['water',14,1,1],['choc',10,1,2],
           ['soda',10,1,1],['scrap',8,1,2],['cash',8,5,30]],
@@ -168,7 +168,7 @@ const ZONE_DEFS = {
     squadN:4, buff:{hp:1,dmg:1}},
   forest:{name:'Whispering Pines', tier:2, grass:['#2c4029','#33482f'],
     scatter:{tree:0.085,bush:0.030,rock:0.006,crate:0.001}, crops:false, fences:0,
-    bld:{n:4, wMin:7,wMax:11, hMin:6,hMax:9}, // lodges
+    bld:{n:3, wMin:11,wMax:16, hMin:9,hMax:13}, // big lodges
     contW:[['crate',50],['medbox',25],['locker',15],['weaponbox',10]],
     mats:[['feather',20,1,2],['choc',12,1,2],['bandage',12,1,1],['water',10,1,1],
           ['figurine',4,1,1],['cash',8,10,40]],
@@ -177,7 +177,7 @@ const ZONE_DEFS = {
     squadN:5, buff:{hp:1.1,dmg:1.1}},
   town:{name:'Old Marrowtown', tier:2, grass:['#3d443a','#464d42'],
     scatter:{tree:0.006,bush:0.008,rock:0.003,crate:0.005}, crops:false, fences:4,
-    bld:{n:13, wMin:9,wMax:17, hMin:7,hMax:13},
+    bld:{n:8, wMin:14,wMax:22, hMin:11,hMax:16},
     contW:[['locker',35],['crate',30],['medbox',20],['weaponbox',15]],
     mats:[['cash',20,20,90],['watch',8,1,1],['figurine',5,1,1],['medkit',6,1,1],
           ['bandage',10,1,2],['soda',10,1,1],['wires',8,1,2],['goldegg',2,1,1]],
@@ -186,7 +186,7 @@ const ZONE_DEFS = {
     squadN:6, buff:{hp:1.15,dmg:1.1}},
   industrial:{name:'Rustworks Industrial', tier:3, grass:['#43413a','#4b4941'],
     scatter:{tree:0.004,bush:0.004,rock:0.008,crate:0.014}, crops:false, fences:5,
-    bld:{n:8, wMin:15,wMax:28, hMin:11,hMax:19}, // sprawling warehouses
+    bld:{n:5, wMin:20,wMax:32, hMin:15,hMax:22}, // vast warehouses
     contW:[['crate',35],['locker',30],['weaponbox',25],['medbox',10]],
     mats:[['scrap',22,2,4],['wires',18,1,3],['tape',12,1,2],['ammo_762',10,6,14],
           ['ammo_12',8,3,8],['grip',4,1,1],['cash',10,20,70]],
@@ -195,7 +195,7 @@ const ZONE_DEFS = {
     squadN:6, buff:{hp:1.3,dmg:1.2}},
   military:{name:'Fort Cinder Depot', tier:3, grass:['#3a4534','#424d3b'],
     scatter:{tree:0.006,bush:0.006,rock:0.006,crate:0.009}, crops:false, fences:7,
-    bld:{n:7, wMin:12,wMax:24, hMin:9,hMax:16},
+    bld:{n:5, wMin:17,wMax:28, hMin:13,hMax:19},
     contW:[['weaponbox',45],['locker',30],['medbox',15],['crate',10]],
     mats:[['ammo_9',16,10,24],['ammo_762',16,8,20],['ammo_12',12,4,10],
           ['silencer',5,1,1],['reddot',6,1,1],['grip',6,1,1],['medkit',6,1,1],
