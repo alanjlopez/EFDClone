@@ -276,7 +276,7 @@ function starterSave(){
     ver:SAVE_VER, cash:150,
     stash:new Array(48).fill(null),
     inv,
-    eq:{g1:{id:'rustpistol',q:1,ammo:10,att:{}}, g2:null, melee:{id:'cleaver',q:1}, t1:null, t2:null},
+    eq:{g1:{id:'rustpistol',q:1,ammo:ITEMS.rustpistol.mag,att:{}}, g2:null, melee:{id:'cleaver',q:1}, t1:null, t2:null},
     pouch:[null,null], pouchSlots:2,
     upgrades:{}, corpse:null,
     stats:{raids:0, extracts:0, deaths:0, kills:0},
