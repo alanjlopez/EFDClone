@@ -30,6 +30,19 @@
 >   from scavenged materials. The Workbench hosts base upgrades and a
 >   **Recycler** that breaks guns, attachments and valuables back into
 >   materials.
+> - **Day / night / dusk** rolled per raid — night darkens the map, spawns
+>   faster and breeds elites.
+> - **Rotting Titan boss** guards each red giant building: one-shot-immune,
+>   ground-slam AoE, guaranteed totem drop, boss health bar.
+> - **Elites**: tougher, one-shot-immune zombies (red aura) mostly at night.
+> - **Progression**: XP & levels feed a 10-node **skill tree** (Survival /
+>   Ranged / Crafting) at the Skills Terminal — more HP/shield, faster reload,
+>   tighter spread, more mining yield, cheaper crafting, and more.
+> - **Contracts**: accept one at the Contract Board (cull the horde, hunt
+>   elites, slay a Titan, loot N, go deep); it tracks live on the HUD and pays
+>   XP + loot on a qualifying extraction.
+> - **Juice & audio**: hit markers, a kill-combo counter, and dynamic ambient
+>   music that intensifies with danger.
 
 A 2D, top-down, single-player **extraction looter-shooter prototype** inspired by
 *Escape from Duckov* — the operator is the little orange Claude creature, and the
