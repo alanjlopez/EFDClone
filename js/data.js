@@ -125,6 +125,28 @@ const LOOT_TABLES = {
     ['feather',20,1,2],['ammo_9',14,5,12],['ammo_12',6,2,5],['ammo_762',8,4,10],['bread',9,1,1],
     ['soda',8,1,1],['bandage',8,1,1],['spoon',6,1,1],['scrap',10,1,2],['wires',6,1,1],['choc',5,1,1],
   ]},
+  elite: {rolls:[2,3], list:[
+    ['feather',22,2,4],['scrap',16,2,4],['wires',12,1,3],['medkit',10,1,1],['ammo_762',10,6,14],
+    ['reddot',5,1,1],['grip',5,1,1],['goldbar',6,1,1],['bandage',10,1,2],
+  ]},
+  boss: {rolls:[4,5], list:[
+    ['ak_rustov',12,1,1],['huntrifle',10,1,1],['silencer',10,1,1],['reddot',8,1,1],['grip',8,1,1],
+    ['medkit',12,1,2],['goldbar',12,1,2],['scrap',10,3,6],['wires',9,2,5],['feather',10,3,6],
+  ]},
+};
+
+// ---------- time of day (rolled per raid) -------------------------------------
+// night = darker, faster spawns, more elites. dusk sits between.
+const TOD_ROLL = [['day',46],['dusk',30],['night',24]];
+const TOD = {
+  day:  {label:'☀ DAY',   overlay:null,                 spawnMul:1.0,  elite:0.04, tint:null,
+         toast:'☀ Daytime. The horde is thinner in the light.'},
+  dusk: {label:'🌆 DUSK',  overlay:'rgba(70,34,54,0.20)', spawnMul:0.85, elite:0.10,
+         tint:'rgba(120,60,40,0.05)',
+         toast:'🌆 Dusk — elevated threat. Elites stir.'},
+  night:{label:'🌙 NIGHT', overlay:'rgba(8,12,38,0.46)',  spawnMul:0.68, elite:0.18,
+         tint:'rgba(30,40,90,0.06)',
+         toast:'🌙 Nightfall — the horde is fierce, and elites roam. Extract before it costs you.'},
 };
 
 // ---------- enemies: the infected --------------------------------------------
@@ -143,7 +165,17 @@ const ENEMY_DEFS = {
   brute:   {name:'Brute',    hp:220, speed:60,  r:19, vision:280, fov:120, color:'#5a7a68', armor:0.3,
             atk:{kind:'melee', dmg:30, rof:0.6, range:54}, gunDrop:['pumpgun',0.20], xp:4,
             groan:'A wall of rot. Do not let it corner you.'},
+  // boss — guards the red giant building. Immune to one-shot (dmgCap clamps
+  // each hit), so it takes a full magazine or two. Slams the ground for AoE.
+  titan:   {name:'Rotting Titan', hp:820, speed:46, r:31, vision:360, fov:180, color:'#6b7f56',
+            armor:0.35, dmgCap:34, boss:true, xp:60,
+            atk:{kind:'melee', dmg:52, rof:0.7, range:74},
+            slam:{cd:3.2, range:150, dmg:40, windup:0.7},
+            groan:'It should not be able to stand. It stands anyway.'},
 };
+// elites: a runtime upgrade applied to a normal spawn (mostly at night).
+// Bigger, tougher, one-shot-immune, and worth extra loot.
+const ELITE = {hpMul:3.2, rMul:1.28, dmgCap:26, dmgMul:1.4, speedMul:1.05};
 // ---------- zones -------------------------------------------------------------
 // The map is carved into Voronoi zones, tiered by distance from the spawn and
 // color-coded on the HUD: GREEN (tier 1) → YELLOW (tier 2) → RED (tier 3).

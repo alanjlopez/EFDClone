@@ -73,6 +73,9 @@ function sfx(name){
     case 'emerge':   noiseHit(0.3,0.18,300); tone(90,0.4,'sawtooth',0.09,45); break;
     case 'shieldup': tone(520,0.14,'sine',0.10,900); setTimeout(()=>tone(760,0.1,'sine',0.09),90); break;
     case 'shieldbreak': noiseHit(0.18,0.2,3200); tone(880,0.16,'square',0.10,180); break;
+    case 'slam':     noiseHit(0.45,0.4,500); tone(70,0.35,'sawtooth',0.18,30); break;
+    case 'bossdie':  tone(150,0.7,'sawtooth',0.2,40); noiseHit(0.6,0.3,400);
+                     setTimeout(()=>tone(90,0.5,'sawtooth',0.16,30),200); break;
     case 'chop':     noiseHit(0.08,0.22,900); tone(170,0.05,'square',0.08); break;
     case 'mine':     noiseHit(0.05,0.16,2400); tone(1100,0.04,'square',0.06); break;
     case 'break':    noiseHit(0.22,0.26,700); tone(120,0.12,'square',0.09,60); break;
@@ -181,6 +184,7 @@ function startRaidState(){
     containers: world.containers,
     time: 0, storm: 'none', awareness:'hidden', curZone:null,
     weather: rweighted(Math.random, WEATHERS)[0],
+    tod: world.tod || 'day',
     extractZone: null, extractT: 0, alarmT: 0, spawnT: 5,
     nodeHp: new Map(), // damaged-but-standing resource nodes
     kills: 0, over: false,
@@ -190,10 +194,11 @@ function startRaidState(){
     const hp = Math.round(def.hp*(s.hpMul||1)); // deep zones breed harder zombies
     RAID.enemies.push({
       type:s.type, def, x:s.x, y:s.y, r:def.r, hp, maxhp:hp, dmgMul:s.dmgMul||1,
+      dmgCap:def.dmgCap||0, boss:!!s.boss,
       dir:Math.random()*7, state:'patrol', stateT:Math.random()*3,
       home:{x:s.x,y:s.y}, tgt:null, lastSeen:null, noLosT:0,
       fireCd:0, burstLeft:(def.atk.burst||1), pauseT:0, strafeDir:1, strafeT:0,
-      stuckT:0, avoidA:0, hurtT:0,
+      slamCd:2, slamWind:0, stuckT:0, avoidA:0, hurtT:0,
     });
   }
   // previous-death corpse run — the world regenerated, so re-home the corpse
@@ -210,6 +215,7 @@ function startRaidState(){
   uiToast('Deployed. New ground every run — deeper zones, harder zombies, better materials.', '');
   uiToast('⛈ Purple storm forecast: '+Math.floor(STORM_HIT/60)+':'+
           String(STORM_HIT%60).padStart(2,'0')+'.', 'bad');
+  uiToast(TOD[RAID.tod].toast, RAID.tod==='night'?'bad':'');
   const wfx=WEATHER_FX[RAID.weather];
   if(wfx.toast) uiToast(wfx.toast, '');
 }
@@ -288,9 +294,18 @@ function spawnInterval(){
   const ramp=clamp(RAID.time/480, 0, 1);
   let iv=lerp(7, 1.6, ramp);
   const z=zoneAt(RAID.world, P.x, P.y);
-  if(z) iv*=z.def.spawnMul; // yellow/red zones spawn faster
+  if(z) iv*=z.def.spawnMul;      // yellow/red zones spawn faster
+  iv*=TOD[RAID.tod].spawnMul;    // night spawns faster still
   if(RAID.extractZone) iv*=0.35;
   return iv;
+}
+// upgrade a freshly-spawned zombie into a one-shot-immune elite
+function makeElite(e){
+  e.elite=true;
+  e.maxhp=Math.round(e.maxhp*ELITE.hpMul); e.hp=e.maxhp;
+  e.r=Math.round(e.r*ELITE.rMul);
+  e.dmgCap=ELITE.dmgCap; e.dmgMul*=ELITE.dmgMul;
+  e.eliteSpeed=ELITE.speedMul;
 }
 function updateSpawner(dt){
   RAID.spawnT-=dt;
@@ -311,15 +326,17 @@ function spawnEmergingZombie(){
     const type=squad[(Math.random()*squad.length)|0];
     const def=ENEMY_DEFS[type];
     const hp=Math.round(def.hp*z.def.buff.hp);
-    RAID.enemies.push({
-      type, def, x, y, r:def.r, hp, maxhp:hp, dmgMul:z.def.buff.dmg,
+    const e={
+      type, def, x, y, r:def.r, hp, maxhp:hp, dmgMul:z.def.buff.dmg, dmgCap:0,
       dir:Math.random()*7, state:'emerge', emergeT:1.2, stateT:0,
       home:{x,y}, tgt:null, lastSeen:null, noLosT:0,
       fireCd:0, burstLeft:(def.atk.burst||1), pauseT:0, strafeDir:1, strafeT:0,
       stuckT:0, avoidA:0, hurtT:0,
-    });
+    };
+    if(Math.random() < TOD[RAID.tod].elite) makeElite(e); // night breeds elites
+    RAID.enemies.push(e);
     for(let i=0;i<8;i++)
-      spawnPart(x,y+4,(Math.random()-0.5)*160,-(20+Math.random()*110),0.7,'#5a4a30',3.5);
+      spawnPart(x,y+4,(Math.random()-0.5)*160,-(20+Math.random()*110),0.7,e.elite?'#7a2a2a':'#5a4a30',3.5);
     if(dist2(P.x,P.y,x,y)<800*800) sfx('emerge');
     return;
   }
@@ -608,7 +625,7 @@ function quickBandage(){
 // -------- interaction -------------------------------------------------------
 const CONT_NAMES={crate:'Wooden Crate', locker:'Locker', medbox:'Medical Box',
   weaponbox:'Weapon Case', nest:'Golden Nest', zcorpse:'Zombie Corpse',
-  pcorpse:'YOUR CORPSE', bag:'Dropped Bag'};
+  bosscorpse:'TITAN CARCASS', pcorpse:'YOUR CORPSE', bag:'Dropped Bag'};
 function findInteractable(){
   let best=null, bd=52*52;
   for(const c of RAID.containers){
@@ -726,6 +743,7 @@ function alertEnemy(e){
   RAID.pings.push({e, t:0});
 }
 function damageEnemy(e, dmg, fromPlayer){
+  if(e.dmgCap) dmg=Math.min(dmg, e.dmgCap); // bosses & elites shrug off one-shots
   if(e.def.armor) dmg*= (1-e.def.armor);
   e.hp-=dmg; e.hurtT=0.25;
   for(let i=0;i<4;i++) spawnPart(e.x,e.y,(Math.random()-0.5)*170,(Math.random()-0.5)*170,0.55,
@@ -739,21 +757,36 @@ function damageEnemy(e, dmg, fromPlayer){
 }
 function killEnemy(e){
   RAID.kills++; G.save.stats.kills++;
-  sfx('groandie');
+  if(e.boss) RAID.bossKilled=(RAID.bossKilled||0)+1;
+  if(e.elite) RAID.eliteKills=(RAID.eliteKills||0)+1;
+  awardXP(e.def.xp||1);
+  sfx(e.boss?'bossdie':'groandie');
+  if(e.boss){ cam.shk=Math.min(12,cam.shk+10);
+    for(let i=0;i<40;i++) spawnPart(e.x,e.y,(Math.random()-0.5)*420,(Math.random()-0.5)*420,1.4,
+      Math.random()<0.5?'#8fae56':'#c23b3b',4.5);
+  }
   P.hp=Math.min(P.maxhp, P.hp+totemEff('killHeal',0));
-  for(let i=0;i<10;i++) spawnPart(e.x,e.y,(Math.random()-0.5)*260,(Math.random()-0.5)*260,0.9,
+  const n=e.boss?10:e.elite?16:10;
+  for(let i=0;i<n;i++) spawnPart(e.x,e.y,(Math.random()-0.5)*260,(Math.random()-0.5)*260,0.9,
     Math.random()<0.5?'#8fae56':'#c23b3b',3.5);
-  // corpse loot
-  const items=rollLoot('zombie', Math.random);
+  // corpse loot — bosses and elites drop from richer tables
+  const table = e.boss?'boss' : e.elite?'elite' : 'zombie';
+  const items=rollLoot(table, Math.random);
   if(e.def.gunDrop && Math.random()<e.def.gunDrop[1]){
     const gid=e.def.gunDrop[0];
     invAddItem(items,{id:gid,q:1,ammo:(Math.random()*ITEMS[gid].mag)|0,att:{}});
+  }
+  if(e.boss){ // guaranteed totem from the Titan
+    const totems=['t_sturdy','t_swift','t_owl','t_vamp','t_plume'];
+    invAddItem(items,{id:totems[(Math.random()*totems.length)|0],q:1});
   }
   if(Math.random()<0.7){
     const q=Math.max(1,Math.round((1+Math.floor(Math.random()*2))*totemEff('featherMul',1)));
     invAddItem(items,{id:'feather',q});
   }
-  RAID.containers.push({type:'zcorpse', x:e.x, y:e.y, items, opened:false, zType:e.type});
+  const ctype = e.boss?'bosscorpse' : 'zcorpse';
+  RAID.containers.push({type:ctype, x:e.x, y:e.y, items, opened:false, zType:e.type});
+  if(e.boss) uiToast('☠ Rotting Titan down. Loot the carcass.','good');
 }
 
 // ============================================================================
@@ -768,6 +801,7 @@ function enemyCanSeePlayer(e){
   return losClear(RAID.world,e.x,e.y,P.x,P.y);
 }
 function enemyMove(e, tx, ty, speed, dt){
+  if(e.eliteSpeed) speed*=e.eliteSpeed;
   const a0=Math.atan2(ty-e.y,tx-e.x);
   const a=a0+e.avoidA;
   const ox=e.x, oy=e.y;
@@ -851,6 +885,27 @@ function updateEnemy(e, dt){
   else if(e.state==='combat'){
     const ls=e.lastSeen||{x:P.x,y:P.y};
     const d=Math.hypot(P.x-e.x,P.y-e.y);
+    // boss ground-slam: winds up, then AoE shockwave
+    if(e.boss){
+      e.slamCd=Math.max(0,e.slamCd-dt);
+      if(e.slamWind>0){
+        e.slamWind-=dt;
+        if(e.slamWind<=0){
+          cam.shk=Math.min(12,cam.shk+8); sfx('slam');
+          addNoise(e.x,e.y,600,'enemy');
+          for(let i=0;i<26;i++){ const a=i/26*Math.PI*2;
+            spawnPart(e.x,e.y,Math.cos(a)*260,Math.sin(a)*260,0.5,'#8a6b3a',4); }
+          if(dist2(P.x,P.y,e.x,e.y) < e.def.slam.range*e.def.slam.range && sees)
+            damagePlayer(e.def.slam.dmg*e.dmgMul, 'the Titan\'s slam');
+        }
+        return; // rooted during the slam
+      }
+      if(sees && d<e.def.slam.range && e.slamCd<=0){
+        e.slamCd=e.def.slam.cd; e.slamWind=e.def.slam.windup;
+        for(let i=0;i<8;i++) spawnPart(e.x,e.y-e.r,0,-60,0.5,'#c23b3b',4);
+        return;
+      }
+    }
     if(atk.kind==='melee'){
       if(sees || e.noLosT<4){
         enemyMove(e, sees?P.x:ls.x, sees?P.y:ls.y, e.def.speed, dt);
@@ -1015,8 +1070,25 @@ function renderRaid(){
   if(RAID.isBase) drawBaseAmbience();
   else{ drawFog(sx,sy); drawSpottedPings(); }
   drawScreenFx();
+  if(!RAID.isBase) drawBossBar();
   drawCrosshair();
   if(!RAID.isBase) drawMinimap();
+}
+
+// a big health bar at the top when a boss is engaged and on-screen
+function drawBossBar(){
+  let boss=null;
+  for(const e of RAID.enemies)
+    if(e.boss && e.state==='combat' && e.hp<e.maxhp && visibleAt(e.x,e.y)){ boss=e; break; }
+  if(!boss) return;
+  const w=cvs.width, bw=Math.min(520, w-120), bx=(w-bw)/2, by=54;
+  ctx.fillStyle='#000a'; ctx.fillRect(bx-3,by-3,bw+6,20);
+  ctx.fillStyle='#2a1414'; ctx.fillRect(bx,by,bw,14);
+  ctx.fillStyle='#c23b3b'; ctx.fillRect(bx,by,bw*(boss.hp/boss.maxhp),14);
+  ctx.strokeStyle='#ff6a5a'; ctx.lineWidth=1.5; ctx.strokeRect(bx,by,bw,14);
+  ctx.fillStyle='#ffcabb'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('☠ '+boss.def.name.toUpperCase(), w/2, by-6);
+  ctx.textAlign='left';
 }
 
 function drawFog(sx,sy){
@@ -1097,6 +1169,12 @@ function drawBaseAmbience(){
 
 function drawScreenFx(){
   const w=cvs.width,h=cvs.height;
+  // time-of-day ambience (raid only) — dusk warms, night darkens
+  if(!RAID.isBase){
+    const tod=TOD[RAID.tod];
+    if(tod.overlay){ ctx.fillStyle=tod.overlay; ctx.fillRect(0,0,w,h); }
+    if(tod.tint){ ctx.fillStyle=tod.tint; ctx.fillRect(0,0,w,h); }
+  }
   if(P.hurtT>0){
     ctx.fillStyle='rgba(200,30,30,'+(P.hurtT*0.55)+')';
     ctx.fillRect(0,0,w,h);
@@ -1213,6 +1291,18 @@ function drawZombie(e){
   // shadow (not rotated)
   ctx.fillStyle='rgba(0,0,0,0.3)';
   ctx.beginPath(); ctx.ellipse(e.x,e.y+8,e.r,e.r*0.45,0,0,7); ctx.fill();
+  // elite / boss aura
+  if(e.elite || e.boss){
+    const gr=ctx.createRadialGradient(e.x,e.y,e.r*0.3,e.x,e.y,e.r*(e.boss?1.9:1.6));
+    gr.addColorStop(0, e.boss?'rgba(180,40,40,0.35)':'rgba(200,60,50,0.28)');
+    gr.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(e.x,e.y,e.r*(e.boss?1.9:1.6),0,7); ctx.fill();
+  }
+  // boss winding up a slam — telegraph ring
+  if(e.boss && e.slamWind>0){
+    ctx.strokeStyle='rgba(255,80,60,'+(0.5+0.4*Math.sin(performance.now()/50))+')';
+    ctx.lineWidth=3; ctx.beginPath(); ctx.arc(e.x,e.y,e.def.slam.range,0,7); ctx.stroke();
+  }
   ctx.save();
   ctx.translate(e.x,e.y);
   if(emerging) ctx.scale(0.6+0.4*ep, 0.25+0.75*ep); // rising out of the ground
@@ -1241,15 +1331,22 @@ function drawZombie(e){
     ctx.fillStyle='#41564a';
     ctx.beginPath(); ctx.arc(0,-e.r*0.75,e.r*0.4,0,7); ctx.arc(0,e.r*0.75,e.r*0.4,0,7); ctx.fill();
   }
+  // boss horns / bulk
+  if(e.boss){
+    ctx.fillStyle='#4a3a2a';
+    ctx.beginPath(); ctx.moveTo(e.r*0.5,-e.r*0.5); ctx.lineTo(e.r*0.9,-e.r*0.95); ctx.lineTo(e.r*0.7,-e.r*0.4); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(e.r*0.5,e.r*0.5); ctx.lineTo(e.r*0.9,e.r*0.95); ctx.lineTo(e.r*0.7,e.r*0.4); ctx.fill();
+  }
   // head
   ctx.fillStyle='#b7c789';
   if(e.type==='runner') ctx.fillStyle='#cfa87a';
-  if(e.type==='brute') ctx.fillStyle='#8fa892';
+  if(e.type==='brute'||e.boss) ctx.fillStyle='#8fa892';
   ctx.beginPath(); ctx.arc(e.r*0.4,0,e.r*0.52,0,7); ctx.fill();
   ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.stroke();
-  // eyes — dull red
-  ctx.fillStyle=e.state==='combat'?'#ff3b2b':'#7a1f1f';
-  ctx.beginPath(); ctx.arc(e.r*0.72,-3.2,1.7,0,7); ctx.arc(e.r*0.72,3.2,1.7,0,7); ctx.fill();
+  // eyes — dull red, blazing for elites/boss
+  ctx.fillStyle=(e.elite||e.boss)?'#ff2a2a':(e.state==='combat'?'#ff3b2b':'#7a1f1f');
+  const es=(e.elite||e.boss)?2.4:1.7;
+  ctx.beginPath(); ctx.arc(e.r*0.72,-3.2,es,0,7); ctx.arc(e.r*0.72,3.2,es,0,7); ctx.fill();
   // spitter's glowing maw
   if(e.type==='spitter'){
     ctx.fillStyle='#c8f04a';
@@ -1257,12 +1354,22 @@ function drawZombie(e){
   }
   ctx.filter='none';
   ctx.restore();
-  // hp bar when damaged
+  // hp bar when damaged (wider for big enemies)
   if(e.hp<e.maxhp){
-    ctx.fillStyle='#000a'; ctx.fillRect(e.x-14,e.y-e.r-11,28,4);
-    ctx.fillStyle='#e05252'; ctx.fillRect(e.x-14,e.y-e.r-11,28*(e.hp/e.maxhp),4);
+    const bw=Math.max(28, e.r*1.6);
+    ctx.fillStyle='#000a'; ctx.fillRect(e.x-bw/2,e.y-e.r-12,bw,4);
+    ctx.fillStyle=(e.elite||e.boss)?'#ff8a3a':'#e05252';
+    ctx.fillRect(e.x-bw/2,e.y-e.r-12,bw*(e.hp/e.maxhp),4);
   }
   if(emerging){ ctx.textAlign='left'; return; } // no awareness icon mid-dirt
+  if(e.boss){ // boss gets a name plate instead of an awareness glyph
+    ctx.fillStyle='#ff6a5a'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('☠ '+e.def.name, e.x, e.y-e.r-18); ctx.textAlign='left'; return;
+  }
+  if(e.elite){
+    ctx.fillStyle='#ff8a3a'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('◆ ELITE', e.x, e.y-e.r-18);
+  }
   // awareness icon: ! spotted you · ? searching · 💤 oblivious
   ctx.textAlign='center';
   if(e.state==='combat'){
@@ -1327,6 +1434,17 @@ function drawContainer(c){
       ctx.beginPath(); // X eyes
       ctx.moveTo(9,0); ctx.lineTo(12,3); ctx.moveTo(12,0); ctx.lineTo(9,3);
       ctx.stroke();
+      break;}
+    case 'bosscorpse':{
+      ctx.fillStyle='#6b7f56'; ctx.globalAlpha=0.85;
+      ctx.beginPath(); ctx.ellipse(0,0,26,15,0.5,0,7); ctx.fill();
+      ctx.fillStyle='#8fa892'; ctx.beginPath(); ctx.arc(16,4,9,0,7); ctx.fill();
+      ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(12,0); ctx.lineTo(18,6); ctx.moveTo(18,0); ctx.lineTo(12,6); ctx.stroke();
+      if(!empty){
+        ctx.globalAlpha=0.4+0.3*Math.sin(performance.now()/240);
+        ctx.strokeStyle='#ffd257'; ctx.beginPath(); ctx.arc(0,0,30,0,7); ctx.stroke();
+      }
       break;}
     case 'pcorpse':
       ctx.fillStyle='#d97757'; ctx.fillRect(-10,-12,20,24);

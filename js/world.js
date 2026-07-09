@@ -138,6 +138,7 @@ function genWorld(raidSeed){
       if(at(x,y)!==T.GRASS) return false;
     return true;
   };
+  const giantBuildings=[]; // red giants — each gets a boss
   for(const z of zones){
     const B=z.def.bld;
     if(B.giant){
@@ -153,6 +154,7 @@ function genWorld(raidSeed){
           if(zoneAtT(bx+((bw/2)|0), by+((bh/2)|0))!==z) continue;
           if(!fits(bx,by,bw,bh)) continue;
           carveBuilding(bx,by,bw,bh);
+          giantBuildings.push({x:(bx+bw/2)*TILE, y:(by+bh/2)*TILE, zone:z});
           done=true;
         }
       }
@@ -298,9 +300,15 @@ function genWorld(raidSeed){
       placed+=squad.length;
     }
   }
+  // a Rotting Titan boss anchors each red giant building
+  for(const g of giantBuildings)
+    enemySpawns.push({type:'titan', x:g.x, y:g.y, hpMul:g.zone.def.buff.hp, dmgMul:g.zone.def.buff.dmg, boss:true});
+
+  // time of day for this raid — affects lighting, spawn rate & elite chance
+  const tod = rweighted(lrng, TOD_ROLL)[0];
 
   return {t, w:MW, h:MH, zones, zmap, buildings, containers, extractions,
-          playerSpawn, enemySpawns, stations:[]};
+          playerSpawn, enemySpawns, tod, stations:[]};
 }
 
 // zone lookup by pixel position (null in the base, which has no zones)

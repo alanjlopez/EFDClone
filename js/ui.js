@@ -324,6 +324,10 @@ function uiUpdateHUD(){
   const wfx=RAID.isBase?null:WEATHER_FX[RAID.weather];
   if(wfx && wfx.label){ wl.style.display='block'; wl.textContent=wfx.label; }
   else wl.style.display='none';
+  const tl=$('todlabel');
+  if(!RAID.isBase){ tl.style.display='block'; tl.textContent=TOD[RAID.tod].label;
+    tl.className='tod-'+RAID.tod; }
+  else tl.style.display='none';
   if(!RAID.isBase){
     const t=RAID.time|0;
     $('timer').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');

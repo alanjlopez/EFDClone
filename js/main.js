@@ -82,6 +82,12 @@ function deploy(){
   saveGame();
 }
 
+// XP — a fuller skill-tree lands in the progression pass; for now, bank it
+function awardXP(n){
+  if(!G.save) return;
+  G.save.xp=(G.save.xp||0)+n;
+}
+
 // game.js calls these ---------------------------------------------------------
 function handleExtract(zone){
   sfx('extract');
