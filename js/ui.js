@@ -309,6 +309,12 @@ function uiUpdateHUD(){
     awEl.className='aw-'+aw;
     awEl.textContent = aw==='spotted' ? '👁 SPOTTED' : aw==='search' ? '❓ SEARCHING…' : '🌿 HIDDEN';
   }
+  const zl=$('zonelabel');
+  if(!RAID.isBase && RAID.curZone){
+    zl.style.display='block';
+    zl.textContent=RAID.curZone.def.name.toUpperCase()+' · TIER '+RAID.curZone.def.tier;
+    zl.className='ztier'+RAID.curZone.def.tier;
+  }else zl.style.display='none';
   if(!RAID.isBase){
     const t=RAID.time|0;
     $('timer').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');

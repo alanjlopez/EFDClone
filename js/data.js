@@ -132,12 +132,69 @@ const ENEMY_DEFS = {
             atk:{kind:'melee', dmg:30, rof:0.6, range:54}, gunDrop:['pumpgun',0.20], xp:4,
             groan:'A wall of rot. Do not let it corner you.'},
 };
-// squad templates rolled per spawn point
-const SQUADS = [
-  ['shambler','shambler','shambler'], ['shambler','shambler'], ['runner','runner'],
-  ['shambler','shambler','runner'], ['spitter','shambler','shambler'], ['brute'],
-  ['brute','shambler'], ['spitter','runner'], ['shambler','shambler','shambler','runner'],
-];
+// ---------- zones -------------------------------------------------------------
+// The map is carved into Voronoi zones. Difficulty (tier) rises with distance
+// from the spawn. Each zone brings its own terrain, building sizes, signature
+// materials (mats: extra loot rolled into every container) and zombie squads.
+// scatter values are per-grass-tile probabilities; buff applies to zombies.
+const ZONE_DEFS = {
+  outskirts:{name:'The Outskirts', tier:1, grass:['#36462f','#3d4d35'],
+    scatter:{tree:0.020,bush:0.014,rock:0.004,crate:0.003}, crops:false, fences:3,
+    bld:{n:6, wMin:5,wMax:8, hMin:4,hMax:6},
+    contW:[['crate',55],['locker',20],['medbox',15],['weaponbox',10]],
+    mats:[['scrap',20,1,2],['spoon',14,1,2],['bread',12,1,1],['soda',10,1,1],
+          ['ammo_9',10,4,10],['tape',8,1,1],['cash',12,5,25]],
+    squads:[['shambler'],['shambler','shambler'],['runner'],['shambler','runner']],
+    squadN:3, buff:{hp:1,dmg:1}},
+  farm:{name:'Rotfield Farms', tier:1, grass:['#4a4d2e','#585c37'],
+    scatter:{tree:0.008,bush:0.008,rock:0.003,crate:0.003}, crops:true, fences:9,
+    bld:{n:7, wMin:8,wMax:15, hMin:6,hMax:10}, // barns
+    contW:[['crate',55],['locker',20],['medbox',15],['weaponbox',10]],
+    mats:[['beans',18,1,1],['bread',16,1,2],['water',14,1,1],['choc',10,1,2],
+          ['soda',10,1,1],['scrap',8,1,2],['cash',8,5,30]],
+    squads:[['shambler','shambler'],['shambler','shambler','shambler'],
+            ['runner','shambler'],['runner','runner']],
+    squadN:4, buff:{hp:1,dmg:1}},
+  forest:{name:'Whispering Pines', tier:2, grass:['#2c4029','#33482f'],
+    scatter:{tree:0.085,bush:0.030,rock:0.006,crate:0.001}, crops:false, fences:0,
+    bld:{n:3, wMin:5,wMax:7, hMin:4,hMax:6}, // cabins
+    contW:[['crate',50],['medbox',25],['locker',15],['weaponbox',10]],
+    mats:[['feather',20,1,2],['choc',12,1,2],['bandage',12,1,1],['water',10,1,1],
+          ['figurine',4,1,1],['cash',8,10,40]],
+    squads:[['runner','runner'],['runner','runner','runner'],
+            ['shambler','runner'],['spitter','runner']],
+    squadN:5, buff:{hp:1.1,dmg:1.1}},
+  town:{name:'Old Marrowtown', tier:2, grass:['#3d443a','#464d42'],
+    scatter:{tree:0.006,bush:0.008,rock:0.003,crate:0.005}, crops:false, fences:4,
+    bld:{n:13, wMin:7,wMax:13, hMin:5,hMax:10},
+    contW:[['locker',35],['crate',30],['medbox',20],['weaponbox',15]],
+    mats:[['cash',20,20,90],['watch',8,1,1],['figurine',5,1,1],['medkit',6,1,1],
+          ['bandage',10,1,2],['soda',10,1,1],['wires',8,1,2],['goldegg',2,1,1]],
+    squads:[['shambler','shambler','runner'],['spitter','shambler'],
+            ['runner','runner','shambler'],['shambler','shambler','shambler','shambler']],
+    squadN:6, buff:{hp:1.15,dmg:1.1}},
+  industrial:{name:'Rustworks Industrial', tier:3, grass:['#43413a','#4b4941'],
+    scatter:{tree:0.004,bush:0.004,rock:0.008,crate:0.014}, crops:false, fences:5,
+    bld:{n:8, wMin:12,wMax:22, hMin:9,hMax:15}, // warehouses
+    contW:[['crate',35],['locker',30],['weaponbox',25],['medbox',10]],
+    mats:[['scrap',22,2,4],['wires',18,1,3],['tape',12,1,2],['ammo_762',10,6,14],
+          ['ammo_12',8,3,8],['grip',4,1,1],['cash',10,20,70]],
+    squads:[['brute','shambler'],['spitter','spitter'],['brute','runner'],
+            ['shambler','shambler','spitter','runner']],
+    squadN:6, buff:{hp:1.3,dmg:1.2}},
+  military:{name:'Fort Cinder Depot', tier:3, grass:['#3a4534','#424d3b'],
+    scatter:{tree:0.006,bush:0.006,rock:0.006,crate:0.009}, crops:false, fences:7,
+    bld:{n:7, wMin:9,wMax:18, hMin:7,hMax:12},
+    contW:[['weaponbox',45],['locker',30],['medbox',15],['crate',10]],
+    mats:[['ammo_9',16,10,24],['ammo_762',16,8,20],['ammo_12',12,4,10],
+          ['silencer',5,1,1],['reddot',6,1,1],['grip',6,1,1],['medkit',6,1,1],
+          ['huntrifle',2,1,1],['akduckov',2,1,1],['cash',10,30,100]],
+    squads:[['brute','brute'],['brute','spitter','shambler'],
+            ['spitter','spitter','runner'],['brute','runner','runner']],
+    squadN:6, buff:{hp:1.35,dmg:1.3}},
+};
+// zone types by distance from spawn (nearest → farthest)
+const ZONE_ORDER = ['outskirts','farm','forest','town','forest','industrial','military'];
 
 // ---------- totem gacha ------------------------------------------------------
 const GACHA = [ ['t_sturdy',28], ['t_swift',24], ['t_owl',20], ['t_vamp',14], ['t_plume',14] ];
@@ -171,7 +228,7 @@ const UPGRADE_DEFS = {
 };
 
 // ---------- starter kit ------------------------------------------------------
-const SAVE_VER = 2;
+const SAVE_VER = 3;
 function starterSave(){
   const inv = new Array(22).fill(null);
   inv[0]={id:'bandage',q:2}; inv[1]={id:'water',q:1}; inv[2]={id:'bread',q:1};
@@ -193,6 +250,10 @@ function migrateSave(s){
     s.pouch=s.dog||[null,null]; s.pouchSlots=s.dogSlots||2;
     delete s.dog; delete s.dogSlots;
     if(s.upgrades && s.upgrades.dog3){ s.upgrades.pouch3=true; delete s.upgrades.dog3; }
+  }
+  if(s.ver===2){
+    s.ver=3;
+    s.corpse=null; // the overworld layout changed — old death sites no longer exist
   }
   return s.ver===SAVE_VER ? s : null;
 }

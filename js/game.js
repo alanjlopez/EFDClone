@@ -12,7 +12,7 @@ const mmCtx = mmCv.getContext('2d');
 
 // tuning ---------------------------------------------------------------------
 const FOV_DEG = 110, VIS_RANGE = 480, NEAR_VIS = 150;
-const STORM_WARN = 360, STORM_HIT = 480, STORM_DPS = 8;
+const STORM_WARN = 420, STORM_HIT = 570, STORM_DPS = 8; // longer raids on the big map
 const BASE_WEIGHT_CAP = 40;
 const PLAYER_R = 13;
 
@@ -164,18 +164,19 @@ function startRaidState(){
   const world = genWorld((Math.random()*1e9)|0);
   RAID = {
     world, isBase:false,
-    terrain: prerenderTerrain(world),
+    terrain: createTerrain(world),
     mmTerrain: prerenderMinimap(world),
     enemies: [], bullets: [], parts: [], noises: [], pings: [],
     containers: world.containers,
-    time: 0, storm: 'none', awareness:'hidden',
+    time: 0, storm: 'none', awareness:'hidden', curZone:null,
     extractZone: null, extractT: 0,
     kills: 0, over: false,
   };
   for(const s of world.enemySpawns){
     const def = ENEMY_DEFS[s.type];
+    const hp = Math.round(def.hp*(s.hpMul||1)); // deep zones breed harder zombies
     RAID.enemies.push({
-      type:s.type, def, x:s.x, y:s.y, r:def.r, hp:def.hp, maxhp:def.hp,
+      type:s.type, def, x:s.x, y:s.y, r:def.r, hp, maxhp:hp, dmgMul:s.dmgMul||1,
       dir:Math.random()*7, state:'patrol', stateT:Math.random()*3,
       home:{x:s.x,y:s.y}, tgt:null, lastSeen:null, noLosT:0,
       fireCd:0, burstLeft:(def.atk.burst||1), pauseT:0, strafeDir:1, strafeT:0,
@@ -190,15 +191,16 @@ function startRaidState(){
   P = makePlayer(world.playerSpawn);
   centerCam();
   G.save.stats.raids++;
-  uiToast('Deployed to Ground Zero. Find loot, reach an extraction point.', '');
-  uiToast('⛈ Purple storm forecast: '+Math.floor(STORM_HIT/60)+' minutes.', 'bad');
+  uiToast('Deployed to Ground Zero. Deeper zones = harder zombies, better materials.', '');
+  uiToast('⛈ Purple storm forecast: '+Math.floor(STORM_HIT/60)+':'+
+          String(STORM_HIT%60).padStart(2,'0')+'.', 'bad');
 }
 
 function startBaseState(){
   const world = genBaseWorld();
   RAID = {
     world, isBase:true,
-    terrain: prerenderTerrain(world), mmTerrain:null,
+    terrain: createTerrain(world), mmTerrain:null,
     enemies: [], bullets: [], parts: [], noises: [], pings: [],
     containers: [],
     time: 0, storm:'none', awareness:'hidden',
@@ -216,7 +218,14 @@ function addNoise(x,y,r,owner){ RAID.noises.push({x,y,r,owner}); }
 function updateRaid(dt){
   if(!RAID || RAID.over) return;
   RAID.time += dt;
-  if(!RAID.isBase) updateStorm(dt);
+  if(!RAID.isBase){
+    updateStorm(dt);
+    const z=zoneAt(RAID.world,P.x,P.y);
+    if(z && z!==RAID.curZone){
+      RAID.curZone=z;
+      uiToast('Entering <b>'+z.def.name+'</b> — Tier '+z.def.tier, z.def.tier>=3?'bad':'');
+    }
+  }
   updatePlayer(dt);
   for(const e of RAID.enemies) updateEnemy(e, dt);
   RAID.enemies = RAID.enemies.filter(e=>e.hp>0);
@@ -664,7 +673,7 @@ function updateEnemy(e, dt){
         if(sees) e.dir=lerp2Angle(e.dir,Math.atan2(P.y-e.y,P.x-e.x),dt*10);
         if(d<atk.range+P.r && e.fireCd<=0 && sees){
           e.fireCd=1/atk.rof;
-          damagePlayer(atk.dmg, 'a '+e.def.name);
+          damagePlayer(atk.dmg*e.dmgMul, 'a '+e.def.name);
         }
       }else{ e.state='investigate'; e.stateT=0; e.tgt=ls; }
       return;
@@ -690,7 +699,7 @@ function updateEnemy(e, dt){
         for(let i=0;i<pellets;i++){
           const a=e.dir+(Math.random()-0.5)*atk.spread*Math.PI/180;
           RAID.bullets.push({x:e.x+Math.cos(e.dir)*20,y:e.y+Math.sin(e.dir)*20,
-            vx:Math.cos(a)*atk.vel,vy:Math.sin(a)*atk.vel,dmg:atk.dmg,owner:'e',
+            vx:Math.cos(a)*atk.vel,vy:Math.sin(a)*atk.vel,dmg:atk.dmg*e.dmgMul,owner:'e',
             dist:0,maxRange:atk.range*1.4,px:e.x,py:e.y,acid:atk.acid,src:'a '+e.def.name});
         }
         spawnPart(e.x+Math.cos(e.dir)*20,e.y+Math.sin(e.dir)*20,0,0,0.12,'#b8e04a',5,'flash');
@@ -779,10 +788,15 @@ function renderRaid(){
   ctx.save();
   ctx.translate(-cam.x+sx, -cam.y+sy);
 
-  ctx.drawImage(RAID.terrain,0,0);
+  drawTerrain(RAID.terrain, ctx, cam.x-64, cam.y-64, cam.x+w+64, cam.y+h+64);
   if(RAID.isBase) drawStations();
   else drawExtractions();
-  for(const c of RAID.containers) drawContainer(c);
+  // cull world furniture to the viewport — the big map has a lot of it
+  const vx0=cam.x-80, vy0=cam.y-80, vx1=cam.x+w+80, vy1=cam.y+h+80;
+  for(const c of RAID.containers){
+    if(c.x<vx0||c.x>vx1||c.y<vy0||c.y>vy1) continue;
+    drawContainer(c);
+  }
   drawPlayer();
   for(const e of RAID.enemies) if(visibleAt(e.x,e.y)) drawZombie(e);
   // bullets (fog will mask distant ones)

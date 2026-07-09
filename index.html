@@ -37,6 +37,11 @@
   #timer{font-size:18px;font-weight:700;letter-spacing:2px;text-shadow:0 1px 3px #000;}
   #stormwarn{font-size:12px;font-weight:700;color:var(--storm);display:none;margin-top:2px;
     animation:blink .8s infinite;}
+  #zonelabel{font-size:10px;font-weight:700;letter-spacing:1.5px;margin-top:2px;display:none;
+    text-shadow:0 1px 3px #000;}
+  #zonelabel.ztier1{color:#79c98a;}
+  #zonelabel.ztier2{color:#ffd257;}
+  #zonelabel.ztier3{color:#ff5a4a;}
   #mm{margin-top:8px;border:1px solid var(--line);border-radius:4px;background:#000c;}
   #basehint{position:absolute;right:14px;top:12px;display:none;font-size:12px;font-weight:700;
     letter-spacing:2px;color:#79c98a;background:#000000aa;border:1px solid var(--line);
@@ -177,6 +182,7 @@
   </div>
   <div id="timerbox">
     <div id="timer">00:00</div>
+    <div id="zonelabel"></div>
     <div id="stormwarn">⛈ PURPLE STORM</div>
     <canvas id="mm" width="168" height="168"></canvas>
   </div>

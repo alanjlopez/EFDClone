@@ -43,17 +43,32 @@ drag onto the world to drop items on the ground.
      random Totem
    - 🛏 **Bed** — rest, restore vitals
    - 🪜 **Ladder** — deploy to Ground Zero
-2. **Loot & fight** — vision-cone fog of war: anything behind you or behind a
+2. **Ground Zero** — a 210×210-tile procedurally generated overworld carved
+   into **7 zones** (Voronoi regions, persistent layout, loot & squads
+   reshuffle each raid). Difficulty rises with distance from the hatch:
+
+   | Zone | Tier | Signature |
+   |---|---|---|
+   | The Outskirts | 1 | easy pickings around the spawn |
+   | Rotfield Farms | 1 | barns, crop rows, food |
+   | Whispering Pines | 2 | dense forest, embers, runners |
+   | Old Marrowtown | 2 | dense housing, cash & valuables |
+   | Rustworks Industrial | 3 | huge warehouses, scrap/wires/tape |
+   | Fort Cinder Depot | 3 | weapon cases, ammo, attachments |
+
+   Tier-3 zombies hit harder and take more killing. The HUD shows the zone
+   you're in; the minimap shows the zone palette.
+3. **Loot & fight** — vision-cone fog of war: anything behind you or behind a
    wall is invisible. Zombies hear gunshots and come looking (silencers help).
-3. **Know when you're made** — every zombie shows 💤 (oblivious), ❓ (searching)
+4. **Know when you're made** — every zombie shows 💤 (oblivious), ❓ (searching)
    or ❗ (spotted you); the HUD chip tracks the horde overall (HIDDEN /
    SEARCHING / SPOTTED), and a red edge-of-screen ping fires when something you
    *can't see* has seen *you*.
-4. **Watch your meters** — energy & hydration tick down; bleeding needs a
+5. **Watch your meters** — energy & hydration tick down; bleeding needs a
    bandage; too much weight makes you slow.
-5. **Extract** at one of three marked zones before the **Purple Storm** hits at
-   8 minutes — or die and lose everything you carried.
-6. **Corpse run** — your gear drops where you fell (✕ on the minimap). You get
+6. **Extract** at one of five marked zones before the **Purple Storm** hits at
+   9:30 — or die and lose everything you carried.
+7. **Corpse run** — your gear drops where you fell (✕ on the minimap). You get
    exactly one recovery chance; die again first and it's gone forever.
    Items in the **Secure Pouch** always come home (and weigh nothing), and the
    **⚙️ Rust Pistol** — the bunker-issue sidearm with unlimited self-forged
@@ -83,9 +98,12 @@ includes **Fading Embers** for the totem gacha.
 - ✅ 6 guns / 2 melee, per-weapon spread, recoil bloom, reload, damage falloff
 - ✅ Drag-and-drop weapon modding (silencer / red dot / grip) in the inventory
 - ✅ Zombie AI: patrol → investigate noise → combat, 4 archetypes
-- ✅ Loot containers with weighted tables; zombie corpse looting
-- ✅ 3 extraction zones with channel timers
-- ✅ Purple Storm timer (warn @6:00, hit @8:00, radiation DPS)
+- ✅ 210×210 procedural overworld with 7 difficulty-tiered zones (materials,
+  building sizes, squad composition & zombie buffs per zone), rendered via
+  lazily-cached terrain chunks
+- ✅ Loot containers with weighted tables + zone signature materials; corpse looting
+- ✅ 5 extraction zones with channel timers
+- ✅ Purple Storm timer (warn @7:00, hit @9:30, radiation DPS)
 - ✅ Death → corpse persistence → one-chance recovery run
 - ✅ Secure Pouch: death-proof, weightless slots (upgradeable to 3)
 - ✅ Walkable physical bunker with interactive stations
@@ -102,7 +120,7 @@ visuals, armor/rigs, difficulty settings, autosave-restore menu.
 ```
 index.html    markup + CSS (HUD, panels, station UI, screens)
 js/data.js    item defs, loot tables, zombie archetypes, totems, trader, upgrades
-js/world.js   seeded raid map + bunker layout, tile collision, DDA raycasting
+js/world.js   zoned procedural map + bunker layout, collision, raycasting, chunked terrain
 js/game.js    sim for raid & base: player, zombie AI, bullets, fog, storm, stations, sfx
 js/ui.js      DOM UI: grids, drag & drop, tooltips, loot & station panels, HUD
 js/main.js    boot, input, state machine (menu → base ⇄ raid), save/load + migration
