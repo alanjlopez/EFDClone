@@ -38,7 +38,7 @@ function newGame(){
   saveGame();
   enterBase();
   uiToast('Welcome home. Walk to the ladder and press E to deploy.','good');
-  uiToast('Boris, the stash, the workbench and the sewer are all down here — walk up and press E.','');
+  uiToast('Boris, the stash and the workshop benches are all down here — walk up and press E.','');
 }
 function continueGame(){
   const s=loadGame();

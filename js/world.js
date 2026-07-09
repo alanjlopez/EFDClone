@@ -29,15 +29,12 @@ function rweighted(rng, list){ // list of [value, weight, ...]
 }
 
 // ---------------------------------------------------------------------------
-// raid map generation. Geometry (zones, roads, buildings, clutter) comes from
-// a fixed layout seed — the map is persistent between raids. Loot containers
-// & zombie squads reshuffle from a per-raid seed.
+// raid map generation. EVERY RUN IS A NEW MAP: geometry, zones, loot and
+// squads all derive from the per-raid seed (two independent streams).
 // ---------------------------------------------------------------------------
-const LAYOUT_SEED = 1337;
-
 function genWorld(raidSeed){
-  const rng  = mulberry32(LAYOUT_SEED);   // geometry
-  const lrng = mulberry32(raidSeed);      // loot & enemies
+  const rng  = mulberry32(raidSeed>>>0);              // geometry
+  const lrng = mulberry32((raidSeed^0x9E3779B9)>>>0); // loot & enemies
   const t = new Uint8Array(MW*MH).fill(T.GRASS);
   const at  = (x,y)=> (x<0||y<0||x>=MW||y>=MH) ? T.ROCK : t[y*MW+x];
   const set = (x,y,v)=>{ if(x>=0&&y>=0&&x<MW&&y<MH) t[y*MW+x]=v; };
@@ -253,8 +250,26 @@ function zoneAt(world, px, py){
   return world.zones[world.zmap[ty*world.w+tx]];
 }
 
+// nearest non-solid spot to a pixel position — used to re-home the corpse of a
+// previous run onto this run's freshly generated map
+function snapToWalkable(world, px, py){
+  let tx=Math.max(3,Math.min(world.w-4,Math.floor(px/TILE)));
+  let ty=Math.max(3,Math.min(world.h-4,Math.floor(py/TILE)));
+  for(let r=0;r<40;r++){
+    for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+      if(Math.max(Math.abs(dx),Math.abs(dy))!==r) continue; // ring only
+      const x=tx+dx, y=ty+dy;
+      if(x<3||y<3||x>=world.w-3||y>=world.h-3) continue;
+      if(!SOLID.has(world.t[y*world.w+x]))
+        return {x:x*TILE+TILE/2, y:y*TILE+TILE/2};
+    }
+  }
+  return {x:world.playerSpawn.x, y:world.playerSpawn.y-80};
+}
+
 // ---------------------------------------------------------------------------
-// the walkable home base: hatch room up top, main hall, sewer below
+// the walkable home base: hatch room up top, main hall, med bay left,
+// workshop (all the benches) bottom-right
 // ---------------------------------------------------------------------------
 function genBaseWorld(){
   const w=34, h=26;
@@ -265,16 +280,20 @@ function genBaseWorld(){
   carve(14,2,19,5,T.FLOOR);   // hatch room
   carve(15,5,18,7,T.FLOOR);   // corridor down
   carve(5,7,28,15,T.FLOOR);   // main hall
-  carve(6,15,9,17,T.ROAD);    // stairwell to the sewer
-  carve(3,17,13,23,T.ROAD);   // sewer room
+  carve(8,15,9,17,T.FLOOR);   // corridor to med bay
+  carve(5,17,12,22,T.ROAD);   // med bay (concrete floor)
+  carve(21,15,22,17,T.FLOOR); // corridor to workshop
+  carve(17,17,28,22,T.ROAD);  // workshop (concrete floor)
   const S=TILE;
   const stations=[
-    {type:'exit',   x:16.9*S, y:3.2*S,  label:'Deploy to Ground Zero'},
-    {type:'stash',  x:7*S,    y:8.8*S,  label:'Open Stash'},
-    {type:'bed',    x:7*S,    y:13.6*S, label:'Rest'},
-    {type:'trader', x:26.5*S, y:8.8*S,  label:'Trade with Boris'},
-    {type:'upgrade',x:26.5*S, y:13.6*S, label:'Use Workbench'},
-    {type:'sewer',  x:8*S,    y:21*S,   label:'Kneel at the Chalk Circle'},
+    {type:'exit',    x:16.9*S, y:3.2*S,  label:'Deploy to Ground Zero'},
+    {type:'stash',   x:7*S,    y:8.8*S,  label:'Open Stash'},
+    {type:'bed',     x:7*S,    y:13.6*S, label:'Rest'},
+    {type:'trader',  x:26.5*S, y:8.8*S,  label:'Trade with Boris'},
+    {type:'medbay',  x:8.5*S,  y:20*S,   label:BENCH_DEFS.medbay.label},
+    {type:'upgrade', x:19.5*S, y:20*S,   label:'Use General Workbench'},
+    {type:'gunsmith',x:24*S,   y:18.5*S, label:BENCH_DEFS.gunsmith.label},
+    {type:'equip',   x:26.8*S, y:21*S,   label:BENCH_DEFS.equip.label},
   ];
   return {t, w, h, stations, containers:[], extractions:[], enemySpawns:[],
           playerSpawn:{x:17*S, y:11*S}};
@@ -379,6 +398,11 @@ function terrainChunk(tr,cx,cy){
     tr.cache.delete(oldest);
   }
   return cv;
+}
+
+// a tile changed (e.g. a tree was felled) — drop its cached chunk
+function terrainDirtyTile(tr, tx, ty){
+  tr.cache.delete(Math.floor(tx/CHUNK_T)+'_'+Math.floor(ty/CHUNK_T));
 }
 
 function drawTerrain(tr, c, x0,y0,x1,y1){

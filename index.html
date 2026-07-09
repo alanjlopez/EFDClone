@@ -42,6 +42,8 @@
   #zonelabel.ztier1{color:#79c98a;}
   #zonelabel.ztier2{color:#ffd257;}
   #zonelabel.ztier3{color:#ff5a4a;}
+  #weatherlabel{font-size:10px;font-weight:700;letter-spacing:1.5px;margin-top:2px;display:none;
+    color:#9fc0e0;text-shadow:0 1px 3px #000;}
   #mm{margin-top:8px;border:1px solid var(--line);border-radius:4px;background:#000c;}
   #basehint{position:absolute;right:14px;top:12px;display:none;font-size:12px;font-weight:700;
     letter-spacing:2px;color:#79c98a;background:#000000aa;border:1px solid var(--line);
@@ -142,11 +144,15 @@
   .upcard h4{color:var(--text);font-size:14px;margin-bottom:4px;}
   .upcard p{color:var(--dim);font-size:12px;margin-bottom:10px;line-height:1.5;}
   .upcard .cost{color:var(--energy);font-size:12px;margin-bottom:10px;}
-  #sewerbox{text-align:center;padding:20px 10px;}
-  #sewerbox .circle{font-size:56px;margin-bottom:8px;filter:drop-shadow(0 0 18px #a45de088);}
-  #sewerbox p{color:var(--dim);font-size:13px;margin:8px 0 18px;line-height:1.7;}
-  #feathercount{color:var(--accent2);font-weight:700;}
-  #gacharesult{margin-top:16px;font-size:14px;color:var(--storm);min-height:22px;font-weight:700;}
+  .benchbox{text-align:center;padding:16px 10px;}
+  .benchbox .benchicon{font-size:52px;margin-bottom:6px;filter:grayscale(.4) drop-shadow(0 3px 8px #000);}
+  .benchbox .benchtag{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--energy);
+    margin-bottom:14px;}
+  .benchbox p{color:var(--dim);font-size:13px;margin:8px 0;}
+  .benchbox ul{list-style:none;margin:4px 0 14px;color:#b8c0d0;font-size:13px;line-height:2;}
+  .benchbox ul li::before{content:'· ';color:var(--accent);}
+  .benchbox .benchwants{font-style:italic;font-size:12px;}
+  .benchbox button{margin-top:6px;}
 
   /* ---------- tooltip & drag ghost ---------- */
   #tooltip{position:absolute;z-index:50;background:#0c0f16f5;border:1px solid var(--accent);border-radius:5px;
@@ -183,6 +189,7 @@
   <div id="timerbox">
     <div id="timer">00:00</div>
     <div id="zonelabel"></div>
+    <div id="weatherlabel"></div>
     <div id="stormwarn">⛈ PURPLE STORM</div>
     <canvas id="mm" width="168" height="168"></canvas>
   </div>
@@ -236,7 +243,8 @@
   </div>
   <div id="controls">
     <b>WASD</b> move &nbsp; <b>Mouse</b> aim &nbsp; <b>LMB</b> fire / swing &nbsp; <b>Shift</b> sprint &nbsp; <b>R</b> reload<br>
-    <b>E</b> interact / use stations &nbsp; <b>Tab</b> inventory &nbsp; <b>1 2 3</b> / <b>wheel</b> weapons &nbsp; <b>F</b> bandage &nbsp; <b>Esc</b> pause
+    <b>E</b> interact / use stations &nbsp; <b>Tab</b> inventory &nbsp; <b>1 2 3</b> / <b>wheel</b> weapons &nbsp; <b>F</b> bandage &nbsp; <b>Esc</b> pause<br>
+    <span style="color:#79c98a">melee-swing trees, rocks & crate piles to harvest 🪵 🪨 🔩</span>
   </div>
 </div>
 

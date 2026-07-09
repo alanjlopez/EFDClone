@@ -66,6 +66,10 @@ function sfx(name){
     case 'storm':    tone(60,1.2,'sawtooth',0.16,35); noiseHit(1.0,0.12,220); break;
     case 'gacha':    tone(300,0.1,'sine',0.12,600); setTimeout(()=>tone(600,0.25,'sine',0.14,1200),150); break;
     case 'buy':      tone(760,0.07,'sine',0.1); setTimeout(()=>tone(950,0.07,'sine',0.1),90); break;
+    case 'siren':    tone(Math.floor(performance.now()/900)%2?780:590,0.35,'triangle',0.11); break;
+    case 'chop':     noiseHit(0.08,0.22,900); tone(170,0.05,'square',0.08); break;
+    case 'mine':     noiseHit(0.05,0.16,2400); tone(1100,0.04,'square',0.06); break;
+    case 'break':    noiseHit(0.22,0.26,700); tone(120,0.12,'square',0.09,60); break;
   }
 }
 
@@ -161,7 +165,7 @@ function centerCam(){
 }
 
 function startRaidState(){
-  const world = genWorld((Math.random()*1e9)|0);
+  const world = genWorld((Math.random()*1e9)|0); // fresh map every run
   RAID = {
     world, isBase:false,
     terrain: createTerrain(world),
@@ -169,7 +173,9 @@ function startRaidState(){
     enemies: [], bullets: [], parts: [], noises: [], pings: [],
     containers: world.containers,
     time: 0, storm: 'none', awareness:'hidden', curZone:null,
-    extractZone: null, extractT: 0,
+    weather: rweighted(Math.random, WEATHERS)[0],
+    extractZone: null, extractT: 0, alarmT: 0,
+    nodeHp: new Map(), // damaged-but-standing resource nodes
     kills: 0, over: false,
   };
   for(const s of world.enemySpawns){
@@ -183,17 +189,22 @@ function startRaidState(){
       stuckT:0, avoidA:0, hurtT:0,
     });
   }
-  // previous-death corpse run
+  // previous-death corpse run — the world regenerated, so re-home the corpse
+  // to the nearest walkable spot at the same coordinates
   if(G.save.corpse){
-    RAID.containers.push({type:'pcorpse', x:G.save.corpse.x, y:G.save.corpse.y,
+    const p=snapToWalkable(world, G.save.corpse.x, G.save.corpse.y);
+    G.save.corpse.x=Math.round(p.x); G.save.corpse.y=Math.round(p.y);
+    RAID.containers.push({type:'pcorpse', x:p.x, y:p.y,
                           items:G.save.corpse.items, opened:false});
   }
   P = makePlayer(world.playerSpawn);
   centerCam();
   G.save.stats.raids++;
-  uiToast('Deployed to Ground Zero. Deeper zones = harder zombies, better materials.', '');
+  uiToast('Deployed. New ground every run — deeper zones, harder zombies, better materials.', '');
   uiToast('⛈ Purple storm forecast: '+Math.floor(STORM_HIT/60)+':'+
           String(STORM_HIT%60).padStart(2,'0')+'.', 'bad');
+  const wfx=WEATHER_FX[RAID.weather];
+  if(wfx.toast) uiToast(wfx.toast, '');
 }
 
 function startBaseState(){
@@ -210,7 +221,10 @@ function startBaseState(){
   centerCam();
 }
 
-function addNoise(x,y,r,owner){ RAID.noises.push({x,y,r,owner}); }
+function addNoise(x,y,r,owner){
+  if(!RAID.isBase) r*=WEATHER_FX[RAID.weather].noise; // rain muffles everything
+  RAID.noises.push({x,y,r,owner});
+}
 
 // ============================================================================
 // update
@@ -227,11 +241,12 @@ function updateRaid(dt){
     }
   }
   updatePlayer(dt);
+  // extraction runs before the AI so its alarm noise is heard this same frame
+  if(!RAID.isBase) updateExtraction(dt);
   for(const e of RAID.enemies) updateEnemy(e, dt);
   RAID.enemies = RAID.enemies.filter(e=>e.hp>0);
   updateBullets(dt);
   updateParticles(dt);
-  if(!RAID.isBase) updateExtraction(dt);
   for(const p of RAID.pings) p.t+=dt;
   RAID.pings = RAID.pings.filter(p=>p.t<2 && p.e.hp>0);
   updateAwareness();
@@ -366,7 +381,10 @@ function tryAttack(){
       let hitAny=false;
       for(const e of RAID.enemies){
         const dd=Math.hypot(e.x-P.x,e.y-P.y);
-        if(dd < d.mrange+e.r && Math.abs(angDiff(P.aim, Math.atan2(e.y-P.y,e.x-P.x))) < d.arc*Math.PI/360){
+        // anything actually touching you gets hit regardless of swing arc
+        const pointBlank = dd < e.r+P.r+6;
+        if(dd < d.mrange+e.r &&
+           (pointBlank || Math.abs(angDiff(P.aim, Math.atan2(e.y-P.y,e.x-P.x))) < d.arc*Math.PI/360)){
           damageEnemy(e, d.dmg, true);
           const kb=90/Math.max(1,dd);
           e.x+=(e.x-P.x)*kb*0.4; e.y+=(e.y-P.y)*kb*0.4;
@@ -374,6 +392,7 @@ function tryAttack(){
         }
       }
       if(hitAny) sfx('hit');
+      else chopNode(d); // no zombie in the way? maybe a tree/rock/crate pile
       addNoise(P.x,P.y,120,'player');
     }
     mouse.clickedFresh=false;
@@ -396,17 +415,67 @@ function tryAttack(){
   let spreadDeg = gs.spread + P.heat + moveAdd;
   if(P.hyd<=25) spreadDeg*=1.4;
   const pellets=d.pellets||1;
-  const mx=P.x+Math.cos(P.aim)*22, my=P.y+Math.sin(P.aim)*22;
+  // bullets spawn at the body, not the muzzle — point-blank shots must connect
+  const mx=P.x+Math.cos(P.aim)*6, my=P.y+Math.sin(P.aim)*6;
   for(let i=0;i<pellets;i++){
     const a=P.aim+(Math.random()-0.5)*spreadDeg*Math.PI/180;
     RAID.bullets.push({x:mx,y:my,vx:Math.cos(a)*d.vel,vy:Math.sin(a)*d.vel,
                        dmg:d.dmg,owner:'p',dist:0,maxRange:d.range,px:mx,py:my});
   }
-  spawnPart(mx,my,Math.cos(P.aim)*60,Math.sin(P.aim)*60,0.07,'#ffdf91',7,'flash');
+  spawnPart(P.x+Math.cos(P.aim)*22,P.y+Math.sin(P.aim)*22,
+            Math.cos(P.aim)*60,Math.sin(P.aim)*60,0.07,'#ffdf91',7,'flash');
   cam.shk=Math.min(7, cam.shk+gs.recoil*1.2);
   addNoise(P.x,P.y,gs.noise,'player');
   sfx(gs.silenced?'shotS':(d.ammo==='ammo_12'?'boom':(d.ammo==='ammo_762'&&!d.auto?'rifle':'shot')));
   uiUpdateWeapon();
+}
+
+// -------- resource mining: melee swings fell trees, crack rocks, smash crates
+function chopNode(meleeDef){
+  if(RAID.isBase) return;
+  const world=RAID.world;
+  for(const dist of [18,34,50]){
+    if(dist>meleeDef.mrange+14) break;
+    const tx=Math.floor((P.x+Math.cos(P.aim)*dist)/TILE);
+    const ty=Math.floor((P.y+Math.sin(P.aim)*dist)/TILE);
+    if(tx<1||ty<1||tx>=world.w-1||ty>=world.h-1) continue;
+    const tt=world.t[ty*world.w+tx];
+    const nd=NODE_DEFS[tt];
+    if(!nd) continue;
+    const key=tx+','+ty;
+    let hp=RAID.nodeHp.has(key)?RAID.nodeHp.get(key):nd.hp;
+    hp-=meleeDef.dmg;
+    sfx(nd.sfx);
+    const cx=tx*TILE+TILE/2, cy=ty*TILE+TILE/2;
+    for(let i=0;i<5;i++)
+      spawnPart(cx,cy,(Math.random()-0.5)*180,(Math.random()-0.5)*180,0.5,nd.color,3);
+    cam.shk=Math.min(5,cam.shk+1.2);
+    if(hp<=0){
+      RAID.nodeHp.delete(key);
+      world.t[ty*world.w+tx]=T.GRASS;          // fell it
+      terrainDirtyTile(RAID.terrain, tx, ty);  // re-render that chunk
+      mmPaintTile(tx,ty);                      // keep the minimap honest
+      sfx('break');
+      for(let i=0;i<10;i++)
+        spawnPart(cx,cy,(Math.random()-0.5)*260,(Math.random()-0.5)*260,0.8,nd.color,3.5);
+      const drops=[{id:nd.drop[0], q:nd.drop[1]+Math.floor(Math.random()*(nd.drop[2]-nd.drop[1]+1))}];
+      if(nd.bonus && Math.random()<nd.bonus[1]) drops.push({id:nd.bonus[0], q:1});
+      for(const s of drops){
+        const label=s.q+'× '+ITEMS[s.id].icon+' '+ITEMS[s.id].name;
+        if(invAddItem(G.save.inv, s)){ gameDropItem(s); uiToast(label+' (backpack full — dropped)','bad'); }
+        else uiToast('+'+label,'good');
+      }
+      sfx('pickup'); uiRefreshAll();
+    }else RAID.nodeHp.set(key,hp);
+    return; // one node per swing
+  }
+}
+function mmPaintTile(tx,ty){
+  if(!RAID.mmTerrain) return;
+  const c=RAID.mmTerrain.getContext('2d'), s=168/RAID.world.w;
+  const z=zoneAt(RAID.world, tx*TILE, ty*TILE);
+  c.fillStyle=z?z.def.grass[0]:'#283a25';
+  c.fillRect(tx*s,ty*s,s+0.6,s+0.6);
 }
 
 function startReload(){
@@ -529,9 +598,20 @@ function updateExtraction(dt){
   for(const z of RAID.world.extractions)
     if(dist2(P.x,P.y,z.x,z.y)<z.r*z.r){ zone=z; break; }
   if(zone && !P.dead){
-    if(RAID.extractZone!==zone){ RAID.extractZone=zone; RAID.extractT=0; sfx('extract'); }
+    if(RAID.extractZone!==zone){
+      RAID.extractZone=zone; RAID.extractT=0; RAID.alarmT=0;
+      sfx('extract');
+      uiToast('🚨 Extraction alarm at '+zone.name+' — the horde is coming!','bad');
+    }
     RAID.extractT+=dt;
-    uiExtractBar('Extracting — '+zone.name, RAID.extractT/zone.time);
+    // the alarm blares — every zombie in earshot converges on you
+    RAID.alarmT-=dt;
+    if(RAID.alarmT<=0){
+      RAID.alarmT=0.9;
+      sfx('siren');
+      addNoise(P.x,P.y,950,'player');
+    }
+    uiExtractBar('Extracting — '+zone.name+' 🚨', RAID.extractT/zone.time);
     if(RAID.extractT>=zone.time){ RAID.over=true; handleExtract(zone); }
   }else{
     RAID.extractZone=null; RAID.extractT=0;
@@ -596,7 +676,7 @@ function killEnemy(e){
 function enemyCanSeePlayer(e){
   if(P.dead) return false;
   const d=Math.hypot(P.x-e.x,P.y-e.y);
-  if(d>e.def.vision) return false;
+  if(d>e.def.vision*WEATHER_FX[RAID.weather].enemyVis) return false;
   const a=Math.atan2(P.y-e.y,P.x-e.x);
   if(d>80 && Math.abs(angDiff(e.dir,a))>e.def.fov*Math.PI/360) return false;
   return losClear(RAID.world,e.x,e.y,P.x,P.y);
@@ -617,6 +697,11 @@ function enemyMove(e, tx, ty, speed, dt){
   }
   const np=collideCircle(RAID.world,nx,ny,e.r);
   e.x=np.x; e.y=np.y;
+  // never stack on top of the player — stop at arm's length
+  const pd=Math.hypot(e.x-P.x,e.y-P.y), minD=e.r+P.r+3;
+  if(pd<minD && pd>0.01){
+    e.x=P.x+(e.x-P.x)/pd*minD; e.y=P.y+(e.y-P.y)/pd*minD;
+  }
   const moved=Math.hypot(e.x-ox,e.y-oy);
   if(moved < speed*dt*0.35){
     e.stuckT+=dt;
@@ -765,6 +850,7 @@ function updateParticles(dt){
 // ============================================================================
 function playerVisRange(){
   let r=VIS_RANGE*totemEff('visionMul',1);
+  if(!RAID.isBase) r*=WEATHER_FX[RAID.weather].vis;
   if(RAID.storm==='active') r*=0.55;
   return r;
 }
@@ -925,6 +1011,20 @@ function drawScreenFx(){
   if(RAID.storm==='active'){
     ctx.fillStyle='rgba(120,50,190,'+(0.10+0.05*Math.sin(RAID.time*3))+')';
     ctx.fillRect(0,0,w,h);
+  }
+  // weather
+  if(!RAID.isBase && RAID.weather==='rain'){
+    ctx.strokeStyle='rgba(150,180,220,0.28)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    for(let i=0;i<44;i++){
+      const x=Math.random()*w, y=Math.random()*h;
+      ctx.moveTo(x,y); ctx.lineTo(x-4,y+13);
+    }
+    ctx.stroke();
+    ctx.fillStyle='rgba(90,120,170,0.05)'; ctx.fillRect(0,0,w,h);
+  }
+  if(!RAID.isBase && RAID.weather==='fog'){
+    ctx.fillStyle='rgba(170,180,195,0.07)'; ctx.fillRect(0,0,w,h);
   }
 }
 
@@ -1141,8 +1241,11 @@ function drawExtractions(){
   for(const z of RAID.world.extractions){
     ctx.save();
     ctx.translate(z.x,z.y);
-    ctx.strokeStyle='rgba(87,217,143,0.75)';
-    ctx.lineWidth=2.5;
+    const alarmed = RAID.extractZone===z;
+    ctx.strokeStyle=alarmed
+      ? 'rgba(255,'+(90+80*Math.abs(Math.sin(performance.now()/160)))+',74,0.9)'
+      : 'rgba(87,217,143,0.75)';
+    ctx.lineWidth=alarmed?3.5:2.5;
     ctx.setLineDash([12,9]);
     ctx.lineDashOffset=-performance.now()/40;
     ctx.beginPath(); ctx.arc(0,0,z.r,0,7); ctx.stroke();
@@ -1213,20 +1316,25 @@ function drawStations(){
         ctx.fillStyle='#d97757'; ctx.fillRect(4,-6,6,6);
         ctx.fillStyle='#454b58'; ctx.fillRect(2,3,12,3);
         break;
-      case 'sewer':
-        ctx.strokeStyle='rgba(232,226,217,0.8)';
-        ctx.lineWidth=2; ctx.setLineDash([6,5]);
-        ctx.beginPath(); ctx.arc(0,0,16,0,7); ctx.stroke();
-        ctx.setLineDash([]);
-        for(let i=0;i<3;i++){
-          const a=i/3*Math.PI*2 + now/2000;
-          ctx.fillStyle='#e8d9a0';
-          ctx.fillRect(Math.cos(a)*22-1.5,Math.sin(a)*22-4,3,7);
-          ctx.fillStyle='rgba(255,170,60,'+(0.55+0.35*Math.sin(now/90+i*2))+')';
-          ctx.beginPath(); ctx.arc(Math.cos(a)*22,Math.sin(a)*22-5,2.5,0,7); ctx.fill();
-        }
-        ctx.fillStyle='rgba(164,93,224,'+(0.25+0.15*Math.sin(now/500))+')';
-        ctx.beginPath(); ctx.arc(0,0,9,0,7); ctx.fill();
+      case 'gunsmith': // bench with a stripped rifle + tarp — not finished
+        ctx.fillStyle='#4a4234'; ctx.fillRect(-18,-10,36,20);
+        ctx.strokeStyle='#2c2618'; ctx.strokeRect(-18,-10,36,20);
+        ctx.fillStyle='#2b2f38'; ctx.fillRect(-12,-3,22,4);
+        ctx.fillStyle='#454b58'; ctx.fillRect(-12,-3,6,6);
+        ctx.fillStyle='rgba(232,226,217,0.25)'; ctx.fillRect(2,-10,16,9); // dust tarp
+        break;
+      case 'equip': // bench with a half-sewn backpack
+        ctx.fillStyle='#4a4234'; ctx.fillRect(-18,-10,36,20);
+        ctx.strokeStyle='#2c2618'; ctx.strokeRect(-18,-10,36,20);
+        ctx.fillStyle='#6b5537'; ctx.fillRect(-9,-6,12,13);
+        ctx.fillStyle='#54462c'; ctx.fillRect(-9,-6,12,5);
+        ctx.strokeStyle='#e8e2d955'; ctx.beginPath();
+        ctx.moveTo(5,4); ctx.lineTo(13,-4); ctx.stroke(); // thread
+        break;
+      case 'medbay': // gurney + cross, sheet still folded
+        ctx.fillStyle='#8a9099'; ctx.fillRect(-16,-9,32,18);
+        ctx.fillStyle='#e8e4dc'; ctx.fillRect(-14,-7,20,14);
+        ctx.fillStyle='#d04040'; ctx.fillRect(8,-6,4,12); ctx.fillRect(4,-2,12,4);
         break;
     }
     // label

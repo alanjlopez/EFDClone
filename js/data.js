@@ -53,8 +53,13 @@ const ITEMS = {
   soda:      {name:'Bunker Cola', type:'drink', icon:'🥤', w:0.4, val:20, stack:3, use:1.0, hyd:28, energy:6,
               desc:'+28 hydration, +6 energy. Fizzy.'},
   // --- junk / materials ---
-  scrap:     {name:'Scrap Metal', type:'junk', icon:'🔩', w:0.5, val:15, stack:10, desc:'Base building material.'},
+  scrap:     {name:'Scrap Metal', type:'junk', icon:'🔩', w:0.5, val:15, stack:10,
+              desc:'Base building material. Smash crate piles for more.'},
   wires:     {name:'Copper Wires', type:'junk', icon:'🧵', w:0.2, val:22, stack:10, desc:'Base building material.'},
+  wood:      {name:'Timber', type:'junk', icon:'🪵', w:0.8, val:10, stack:10,
+              desc:'Chopped from trees with a melee swing. The benches will want plenty.'},
+  stone:     {name:'Stone', type:'junk', icon:'🪨', w:1.2, val:8, stack:10,
+              desc:'Broken off rocks with a melee swing. Heavy, but walls need it.'},
   spoon:     {name:'Bent Spoon', type:'junk', icon:'🥄', w:0.1, val:8, stack:10, desc:'Iconic. Worthless. Iconic.'},
   tape:      {name:'Duct Tape', type:'junk', icon:'⚫', w:0.2, val:30, stack:5, desc:'Fixes 60% of everything.'},
   // --- valuables ---
@@ -63,7 +68,7 @@ const ITEMS = {
   figurine:  {name:'Cat Figurine', type:'valuable', icon:'🐈', w:0.2, val:230, rare:true, desc:'Limited edition.'},
   // --- embers / cash ---
   feather:   {name:'Fading Ember', type:'feather', icon:'🔥', w:0.05, val:25, stack:20,
-              desc:'Still warm, whatever it was. Sacrifice 8 at the Chalk Circle for a random Totem.'},
+              desc:'Still warm, whatever it was. Boris pays well — and the new benches may want them someday.'},
   cash:      {name:'Cash', type:'cash', icon:'💵', w:0, val:1, stack:9999,
               desc:'Converted to bunker funds on extraction. Lost like anything else if you die.'},
   // --- attachments ---
@@ -107,7 +112,9 @@ const LOOT_TABLES = {
     ['ammo_762',16,8,20],
   ]},
   nest: {rolls:[2,3], list:[
-    ['goldegg',28,1,1],['figurine',22,1,1],['feather',35,2,4],['cash',25,50,150],['watch',12,1,1],
+    ['goldegg',26,1,1],['figurine',20,1,1],['feather',30,2,4],['cash',22,50,150],['watch',11,1,1],
+    // with the chalk circle gone, nests are where totems hide
+    ['t_sturdy',4,1,1],['t_swift',4,1,1],['t_owl',3,1,1],['t_vamp',3,1,1],['t_plume',3,1,1],
   ]},
   zombie: {rolls:[2,3], list:[
     ['cash',26,8,40],['ammo_9',14,5,12],['ammo_12',6,2,5],['ammo_762',8,4,10],['bread',9,1,1],
@@ -121,9 +128,9 @@ const ENEMY_DEFS = {
   shambler:{name:'Shambler', hp:60,  speed:55,  r:13, vision:260, fov:140, color:'#7da05a',
             atk:{kind:'melee', dmg:12, rof:1.0, range:40}, gunDrop:['makarov',0.10], xp:1,
             groan:'Slow, stubborn, everywhere.'},
-  runner:  {name:'Runner',   hp:35,  speed:185, r:12, vision:330, fov:150, color:'#c08a5a',
+  runner:  {name:'Runner',   hp:35,  speed:152, r:12, vision:330, fov:150, color:'#c08a5a',
             atk:{kind:'melee', dmg:10, rof:1.4, range:40}, gunDrop:null, xp:1,
-            groan:'It sprints. You should too.'},
+            groan:'Faster than your walk. Slower than your sprint. Plan accordingly.'},
   spitter: {name:'Spitter',  hp:45,  speed:70,  r:13, vision:300, fov:140, color:'#9ab84a',
             atk:{kind:'gun', dmg:12, rof:0.7, burst:1, pause:1.2, spread:5, range:340, vel:420,
                  noise:260, acid:true}, gunDrop:null, xp:2,
@@ -196,9 +203,26 @@ const ZONE_DEFS = {
 // zone types by distance from spawn (nearest → farthest)
 const ZONE_ORDER = ['outskirts','farm','forest','town','forest','industrial','military'];
 
-// ---------- totem gacha ------------------------------------------------------
-const GACHA = [ ['t_sturdy',28], ['t_swift',24], ['t_owl',20], ['t_vamp',14], ['t_plume',14] ];
-const GACHA_COST = 8; // fading embers
+// ---------- resource nodes (mined with melee swings) --------------------------
+// keyed by tile type; drops roll qmin..qmax, bonus is an extra-chance item
+const NODE_DEFS = {
+  [4/*T.TREE*/]:  {hp:50, name:'Tree',       drop:['wood',2,3],  color:'#8a6636', sfx:'chop'},
+  [5/*T.ROCK*/]:  {hp:90, name:'Rock',       drop:['stone',2,3], color:'#8b93a5', sfx:'mine'},
+  [7/*T.CRATE*/]: {hp:40, name:'Crate Pile', drop:['scrap',1,2], color:'#7a5c38', sfx:'chop',
+                   bonus:['tape',0.3]},
+};
+
+// ---------- weather mutators (rolled per raid) ---------------------------------
+const WEATHERS = [
+  ['clear',55], ['rain',25], ['fog',20],
+];
+const WEATHER_FX = {
+  clear:{vis:1,    enemyVis:1,    noise:1},
+  rain: {vis:0.85, enemyVis:0.85, noise:0.72, label:'🌧 RAIN',
+         toast:'🌧 Rain — sound is dampened, visibility down.'},
+  fog:  {vis:0.60, enemyVis:0.70, noise:1, label:'🌫 FOG',
+         toast:'🌫 Dense fog — your cone is short today. So is theirs.'},
+};
 
 // ---------- trader -----------------------------------------------------------
 const TRADER_STOCK = [
@@ -221,10 +245,23 @@ const TRADER_STOCK = [
 const UPGRADE_DEFS = {
   stash2: {name:'Warehouse Expansion', icon:'🏗',
            desc:'Physically extends the stash room. +32 stash slots.',
-           cash:500, mats:{scrap:8}},
+           cash:500, mats:{scrap:8, wood:8}},
   pouch3: {name:'Reinforced Secure Pouch', icon:'🔒',
            desc:'A third secure slot. Whatever is inside always comes home.',
-           cash:750, mats:{wires:6}},
+           cash:750, mats:{wires:6, stone:6}},
+};
+
+// benches that aren't built yet — walkable placeholders with a plan attached
+const BENCH_DEFS = {
+  gunsmith:{icon:'🔫', name:'Gunsmith Bench', label:'Gunsmith (under construction)',
+    planned:['Weapon repair & durability', 'Barrel / stock swaps', 'Custom ammo pressing'],
+    wants:'Timber, Scrap Metal, and a lot of patience.'},
+  equip:   {icon:'🎒', name:'Equipment Bench', label:'Equipment Bench (under construction)',
+    planned:['Armor rigs & vests', 'Backpack crafting (+slots)', 'Secure pouch mods'],
+    wants:'Timber, Duct Tape, Copper Wires.'},
+  medbay:  {icon:'🩺', name:'Med Bay', label:'Med Bay (under construction)',
+    planned:['Craft bandages & medkits', 'Cure infections', 'Pre-raid stat boosts'],
+    wants:'Stone, Water, anything sterile.'},
 };
 
 // ---------- starter kit ------------------------------------------------------

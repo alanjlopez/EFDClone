@@ -1,6 +1,6 @@
 // ============================================================================
 // ui.js — DOM UI: HUD, inventory grids + drag & drop, loot panel, base
-//         station panels (stash/trader/sewer/workbench), tooltips, screens
+//         station panels (stash/trader/benches), tooltips, screens
 // ============================================================================
 'use strict';
 
@@ -315,6 +315,10 @@ function uiUpdateHUD(){
     zl.textContent=RAID.curZone.def.name.toUpperCase()+' · TIER '+RAID.curZone.def.tier;
     zl.className='ztier'+RAID.curZone.def.tier;
   }else zl.style.display='none';
+  const wl=$('weatherlabel');
+  const wfx=RAID.isBase?null:WEATHER_FX[RAID.weather];
+  if(wfx && wfx.label){ wl.style.display='block'; wl.textContent=wfx.label; }
+  else wl.style.display='none';
   if(!RAID.isBase){
     const t=RAID.time|0;
     $('timer').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
@@ -455,10 +459,11 @@ function consumeItem(id,want){
 function renderStationContent(){
   const L=$('stationcontent');
   const type=STATION.type;
+  const bench=BENCH_DEFS[type];
   $('stationtitle').textContent =
     type==='stash' ? '📦 Stash — '+G.save.stash.length+' slots' :
     type==='trader' ? '🧔 Boris the Trader — 💵 $'+G.save.cash :
-    type==='sewer' ? '🕯 The Chalk Circle' : '🔧 Workbench';
+    bench ? bench.icon+' '+bench.name : '🔧 General Workbench';
   if(type==='stash'){
     L.innerHTML='<div class="stashgrid" id="st-stashgrid"></div>'+
       '<div class="panelhint">Click = move between stash & backpack · Drag for precise placement · Right-click = equip</div>';
@@ -476,14 +481,16 @@ function renderStationContent(){
     L.innerHTML=h;
     L.querySelectorAll('[data-buy]').forEach(b=>b.addEventListener('click',()=>buyStock(+b.dataset.buy)));
   }
-  else if(type==='sewer'){
-    const n=countItem('feather');
-    L.innerHTML='<div id="sewerbox"><div class="circle">🕯️</div>'+
-      '<p>Beneath the bunker, something listens.<br>Sacrifice <b>'+GACHA_COST+' Fading Embers</b> for a random Totem.<br>'+
-      'You hold <span id="feathercount">'+n+'</span> embers.</p>'+
-      '<button class="primary" id="btn-gacha"'+(n<GACHA_COST?' disabled':'')+'>Sacrifice '+GACHA_COST+' 🔥</button>'+
-      '<div id="gacharesult"></div></div>';
-    $('btn-gacha').addEventListener('click',doGacha);
+  else if(bench){
+    // placeholder bench — walkable, inspectable, not yet operational
+    let h='<div class="benchbox"><div class="benchicon">'+bench.icon+'</div>'+
+      '<div class="benchtag">🚧 UNDER CONSTRUCTION</div>'+
+      '<p>Planned services:</p><ul>';
+    for(const p of bench.planned) h+='<li>'+p+'</li>';
+    h+='</ul><p class="benchwants">Will want: '+bench.wants+'</p>'+
+      '<button class="small" disabled>Build (coming soon)</button>'+
+      '<div class="panelhint">Stockpile 🪵 Timber and 🪨 Stone — melee-swing trees and rocks out in the field.</div></div>';
+    L.innerHTML=h;
   }
   else if(type==='upgrade'){
     let h='';
@@ -512,18 +519,6 @@ function buyStock(i){
   if(left){ uiToast('No room anywhere!','bad'); return; }
   G.save.cash-=st.price;
   sfx('buy'); saveGame(); uiRefreshAll();
-}
-function doGacha(){
-  if(countItem('feather')<GACHA_COST) return;
-  consumeItem('feather',GACHA_COST);
-  const id=rweighted(Math.random,GACHA)[0];
-  let left=invAddItem(G.save.stash,{id,q:1});
-  if(left) left=invAddItem(G.save.inv,left);
-  sfx('gacha'); saveGame();
-  uiRefreshAll(); // refresh ember count & button state
-  const g=$('gacharesult');
-  if(g) g.textContent='The circle hums… you receive '+ITEMS[id].icon+' '+ITEMS[id].name+'!'+
-    (left?' …but you had no room. It rolls into the dark.':'');
 }
 function buyUpgrade(k){
   const u=UPGRADE_DEFS[k];

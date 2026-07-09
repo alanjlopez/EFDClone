@@ -38,14 +38,15 @@ drag onto the world to drop items on the ground.
 1. **The Bunker** — a walkable home base. Walk up to a station and press `E`:
    - 📦 **Stash chest** — long-term storage
    - 🧔 **Boris the trader** — buy supplies, click your items to sell
-   - 🔧 **Workbench** — base upgrades (stash expansion, third secure slot)
-   - 🕯 **Chalk Circle** (down in the sewer) — sacrifice 8 Fading Embers for a
-     random Totem
+   - 🔧 **General Workbench** — base upgrades (cost cash + scrap/wood/stone)
+   - 🚧 **Gunsmith · Equipment Bench · Med Bay** — under-construction
+     placeholders in the workshop & med bay rooms, each listing its planned
+     services
    - 🛏 **Bed** — rest, restore vitals
    - 🪜 **Ladder** — deploy to Ground Zero
-2. **Ground Zero** — a 210×210-tile procedurally generated overworld carved
-   into **7 zones** (Voronoi regions, persistent layout, loot & squads
-   reshuffle each raid). Difficulty rises with distance from the hatch:
+2. **Ground Zero** — a 210×210-tile procedurally generated overworld,
+   **regenerated fresh every single run**, carved into **7 zones** (Voronoi
+   regions). Difficulty rises with distance from the hatch:
 
    | Zone | Tier | Signature |
    |---|---|---|
@@ -58,8 +59,12 @@ drag onto the world to drop items on the ground.
 
    Tier-3 zombies hit harder and take more killing. The HUD shows the zone
    you're in; the minimap shows the zone palette.
-3. **Loot & fight** — vision-cone fog of war: anything behind you or behind a
-   wall is invisible. Zombies hear gunshots and come looking (silencers help).
+3. **Loot, fight & harvest** — vision-cone fog of war: anything behind you or
+   behind a wall is invisible. Zombies hear gunshots and come looking
+   (silencers help). **Melee-swing trees, rocks and crate piles** to harvest
+   🪵 Timber, 🪨 Stone and 🔩 Scrap — the tile breaks off the map when it's
+   spent. Weather changes per raid: 🌧 rain muffles sound and trims vision,
+   🌫 fog cuts everyone's sight lines hard.
 4. **Know when you're made** — every zombie shows 💤 (oblivious), ❓ (searching)
    or ❗ (spotted you); the HUD chip tracks the horde overall (HIDDEN /
    SEARCHING / SPOTTED), and a red edge-of-screen ping fires when something you
@@ -67,8 +72,10 @@ drag onto the world to drop items on the ground.
 5. **Watch your meters** — energy & hydration tick down; bleeding needs a
    bandage; too much weight makes you slow.
 6. **Extract** at one of five marked zones before the **Purple Storm** hits at
-   9:30 — or die and lose everything you carried.
-7. **Corpse run** — your gear drops where you fell (✕ on the minimap). You get
+   9:30 — but starting the channel **sounds an alarm** that pulls every zombie
+   in earshot straight to you. Hold the point or die on the doorstep.
+7. **Corpse run** — your gear drops where you fell (✕ on the minimap, re-homed
+   onto the next run's fresh map at the same spot). You get
    exactly one recovery chance; die again first and it's gone forever.
    Items in the **Secure Pouch** always come home (and weigh nothing), and the
    **⚙️ Rust Pistol** — the bunker-issue sidearm with unlimited self-forged
@@ -98,11 +105,14 @@ includes **Fading Embers** for the totem gacha.
 - ✅ 6 guns / 2 melee, per-weapon spread, recoil bloom, reload, damage falloff
 - ✅ Drag-and-drop weapon modding (silencer / red dot / grip) in the inventory
 - ✅ Zombie AI: patrol → investigate noise → combat, 4 archetypes
-- ✅ 210×210 procedural overworld with 7 difficulty-tiered zones (materials,
-  building sizes, squad composition & zombie buffs per zone), rendered via
-  lazily-cached terrain chunks
+- ✅ 210×210 procedural overworld, new map every run, with 7 difficulty-tiered
+  zones (materials, building sizes, squad composition & zombie buffs per
+  zone), rendered via lazily-cached terrain chunks
+- ✅ Resource mining: melee harvests trees/rocks/crate piles into timber,
+  stone & scrap; tiles break off the live map
+- ✅ Weather mutators per raid (rain, fog) affecting vision & sound
 - ✅ Loot containers with weighted tables + zone signature materials; corpse looting
-- ✅ 5 extraction zones with channel timers
+- ✅ 5 extraction zones with channel timers **and horde-drawing alarms**
 - ✅ Purple Storm timer (warn @7:00, hit @9:30, radiation DPS)
 - ✅ Death → corpse persistence → one-chance recovery run
 - ✅ Secure Pouch: death-proof, weightless slots (upgradeable to 3)
@@ -111,9 +121,10 @@ includes **Fading Embers** for the totem gacha.
 - ✅ localStorage save/continue (v1 saves migrate automatically)
 - ✅ Synthesized sound effects (WebAudio, no assets)
 
-**Not yet (future work):** skill trees/XP, multiple maps, day/night + night-only
-elites, weather mutators, blueprints/crafting, room-by-room base *expansion*
-visuals, armor/rigs, difficulty settings, autosave-restore menu.
+**Not yet (future work):** the three placeholder benches going live
+(gunsmithing, equipment crafting, med bay), skill trees/XP, day/night +
+night-only elites, blueprints, armor/rigs, difficulty settings,
+autosave-restore menu.
 
 ## Code layout
 
