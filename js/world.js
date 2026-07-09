@@ -214,8 +214,8 @@ function genWorld(raidSeed){
   // no extraction near the drop — you must travel to reach one
   const extractions=[];
   for(const s of exSpots){
-    clear(s.x,s.y,4);
-    extractions.push({x:s.x*TILE, y:s.y*TILE, r:76, name:s.name, time:75});
+    clear(s.x,s.y,5);
+    extractions.push({x:s.x*TILE, y:s.y*TILE, r:110, name:s.name, time:75});
   }
 
   // ============ per-raid: loot containers (zone flavored) ============

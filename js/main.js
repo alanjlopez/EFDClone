@@ -29,6 +29,7 @@ function loadGame(){
 // ---------------------------------------------------------------------------
 function showMenu(){
   G.mode='menu';
+  musicStop();
   uiShowScreen('menu');
   $('btn-continue').disabled = !loadGame();
 }
@@ -271,6 +272,7 @@ function frame(now){
     else if(RAID && (G.mode==='dead'||G.mode==='summary')){
       // let particles settle behind the end screens
       updateParticles(dt); cam.shk=Math.max(0,cam.shk-dt*18);
+      musicUpdate(dt, 0.12);
     }
     if(RAID) renderRaid();
   }

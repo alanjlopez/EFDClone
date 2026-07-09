@@ -46,6 +46,54 @@ function noiseHit(dur,vol,freq){
   const g=a.createGain(); g.gain.value=vol||0.2;
   src.connect(f).connect(g).connect(a.destination); src.start();
 }
+// ---- dynamic ambient music: a low pad + tension layer + heartbeat tremolo
+// whose gain, filter and pulse-rate track a live "intensity" 0..1 -------------
+let MUSIC=null, musicCur=0;
+function musicStart(){
+  const a=audio(); if(!a || MUSIC) return;
+  const master=a.createGain(); master.gain.value=0.0001; master.connect(a.destination);
+  const trem=a.createGain(); trem.gain.value=1; trem.connect(master);
+  const filt=a.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=240; filt.connect(trem);
+  const mk=(f,type,g)=>{ const o=a.createOscillator(),gn=a.createGain();
+    o.type=type; o.frequency.value=f; gn.gain.value=g; o.connect(gn).connect(filt); o.start(); return {o,gn}; };
+  const pad1=mk(55,'triangle',0.6), pad2=mk(55.4,'triangle',0.5);
+  const tension=mk(73.42,'sawtooth',0.0001);
+  // heartbeat: LFO drives the tremolo gain
+  const lfo=a.createOscillator(), lfoDepth=a.createGain();
+  lfo.type='sine'; lfo.frequency.value=1.0; lfoDepth.gain.value=0.12;
+  lfo.connect(lfoDepth).connect(trem.gain); lfo.start();
+  MUSIC={master,trem,filt,tension,lfo,lfoDepth};
+}
+function musicStop(){
+  if(!MUSIC) return; const a=audio();
+  try{ MUSIC.master.gain.setTargetAtTime(0.0001, a.currentTime, 0.3);
+    setTimeout(()=>{ try{MUSIC.lfo.stop();}catch(e){} MUSIC=null; }, 600);
+  }catch(e){ MUSIC=null; }
+}
+function musicUpdate(dt, target){
+  if(!MUSIC){ if(audio()) musicStart(); else return; }
+  const a=audio(); if(!a||!MUSIC) return;
+  musicCur += (target-musicCur)*Math.min(1,dt*1.5);
+  const c=musicCur, now=a.currentTime, k=sndMuted?0:1;
+  MUSIC.master.gain.setTargetAtTime((0.045+c*0.09)*k, now, 0.2);
+  MUSIC.tension.gn.gain.setTargetAtTime((0.0001+c*0.5)*k, now, 0.25);
+  MUSIC.filt.frequency.setTargetAtTime(220+c*1300, now, 0.25);
+  MUSIC.lfo.frequency.setTargetAtTime(0.9+c*2.6, now, 0.3);
+  MUSIC.lfoDepth.gain.setTargetAtTime(0.12+c*0.5, now, 0.3);
+}
+function raidIntensity(){
+  if(!RAID) return 0;
+  if(RAID.isBase) return 0.05;
+  let i=0.12;
+  if(RAID.awareness==='search') i=0.34;
+  if(RAID.awareness==='spotted') i=0.6;
+  if(RAID.extractZone) i=Math.max(i,0.82);
+  if(RAID.storm==='active') i=Math.max(i,0.9);
+  if(RAID.tod==='night') i+=0.1;
+  let near=0; for(const e of RAID.enemies) if(dist2(P.x,P.y,e.x,e.y)<400*400) near++;
+  return Math.min(1, i+Math.min(0.25, near*0.03));
+}
+
 function sfx(name){
   switch(name){
     case 'shot':     noiseHit(0.14,0.28,2400); tone(160,0.08,'square',0.10,60); break;
@@ -178,6 +226,7 @@ function makePlayer(spawn){
     active: G.save.eq.g1?0:(G.save.eq.g2?1:2),
     fireCd:0, reloadT:0, switchT:0, heat:0, swingT:0, swingAnim:0, use:null,
     hurtT:0, stamDelay:0, walkPhase:0, moving:false, dead:false, speedNow:0,
+    hitMarkerT:0, hitKill:false,
   };
 }
 function centerCam(){
@@ -198,6 +247,7 @@ function startRaidState(){
     extractZone: null, extractT: 0, alarmT: 0, spawnT: 5,
     nodeHp: new Map(), // damaged-but-standing resource nodes
     kills: 0, eliteKills: 0, bossKilled: 0, looted: 0, redVisited: false, over: false,
+    combo: 0, comboBest: 0, comboT: 0,
   };
   for(const s of world.enemySpawns){
     const def = ENEMY_DEFS[s.type];
@@ -273,9 +323,12 @@ function updateRaid(dt){
   updateParticles(dt);
   for(const p of RAID.pings) p.t+=dt;
   RAID.pings = RAID.pings.filter(p=>p.t<2 && p.e.hp>0);
+  RAID.comboT=Math.max(0,RAID.comboT-dt);
+  if(RAID.comboT<=0) RAID.combo=0;
   updateAwareness();
   RAID.noises.length = 0;
   cam.shk = Math.max(0, cam.shk - dt*18);
+  musicUpdate(dt, raidIntensity());
   // camera follows with slight aim lean
   const tx = P.x - cvs.width/2 + (mouse.x - cvs.width/2)*0.12;
   const ty = P.y - cvs.height/2 + (mouse.y - cvs.height/2)*0.12;
@@ -307,7 +360,9 @@ function spawnInterval(){
   const z=zoneAt(RAID.world, P.x, P.y);
   if(z) iv*=z.def.spawnMul;      // yellow/red zones spawn faster
   iv*=TOD[RAID.tod].spawnMul;    // night spawns faster still
-  if(RAID.extractZone) iv*=0.35;
+  // the extraction alarm cranks spawns, but a floor keeps the multipliers from
+  // stacking into an unwinnable wall during the 75s hold
+  if(RAID.extractZone) iv=Math.max(1.1, iv*0.6);
   return iv;
 }
 // upgrade a freshly-spawned zombie into a one-shot-immune elite
@@ -414,6 +469,7 @@ function updatePlayer(dt){
   P.swingT=Math.max(0,P.swingT-dt);
   P.swingAnim=Math.max(0,P.swingAnim-dt);
   P.hurtT=Math.max(0,P.hurtT-dt);
+  P.hitMarkerT=Math.max(0,P.hitMarkerT-dt);
   P.heat=Math.max(0,P.heat-dt*7);
   // reload
   if(P.reloadT>0){
@@ -714,12 +770,13 @@ function updateExtraction(dt){
       uiToast('🚨 Extraction alarm at '+zone.name+' — the horde is coming!','bad');
     }
     RAID.extractT+=dt;
-    // the alarm blares — every zombie in earshot converges on you
+    // the alarm blares — nearby zombies converge on you (radius kept modest so
+    // the whole map doesn't funnel onto the point)
     RAID.alarmT-=dt;
     if(RAID.alarmT<=0){
-      RAID.alarmT=0.9;
+      RAID.alarmT=1.1;
       sfx('siren');
-      addNoise(P.x,P.y,950,'player');
+      addNoise(P.x,P.y,620,'player');
     }
     uiExtractBar('Extracting — '+zone.name+' 🚨', RAID.extractT/zone.time);
     if(RAID.extractT>=zone.time){ RAID.over=true; handleExtract(zone); }
@@ -760,6 +817,7 @@ function damageEnemy(e, dmg, fromPlayer){
   if(e.dmgCap) dmg=Math.min(dmg, e.dmgCap); // bosses & elites shrug off one-shots
   if(e.def.armor) dmg*= (1-e.def.armor);
   e.hp-=dmg; e.hurtT=0.25;
+  if(fromPlayer && e.hp>0){ P.hitMarkerT=0.12; P.hitKill=false; } // hit feedback
   for(let i=0;i<4;i++) spawnPart(e.x,e.y,(Math.random()-0.5)*170,(Math.random()-0.5)*170,0.55,
     Math.random()<0.6?'#8fae56':'#c23b3b',3);
   if(fromPlayer){
@@ -773,6 +831,9 @@ function killEnemy(e){
   RAID.kills++; G.save.stats.kills++;
   if(e.boss) RAID.bossKilled=(RAID.bossKilled||0)+1;
   if(e.elite) RAID.eliteKills=(RAID.eliteKills||0)+1;
+  P.hitMarkerT=0.18; P.hitKill=true;               // kill confirmation
+  RAID.combo++; RAID.comboT=2.6;                    // combo streak
+  if(RAID.combo>RAID.comboBest) RAID.comboBest=RAID.combo;
   awardXP(e.def.xp||1);
   sfx(e.boss?'bossdie':'groandie');
   if(e.boss){ cam.shk=Math.min(12,cam.shk+10);
@@ -1244,6 +1305,27 @@ function drawCrosshair(){
   ctx.moveTo(x,y+gap);   ctx.lineTo(x,y+gap+6);
   ctx.stroke();
   ctx.fillStyle='#d97757'; ctx.fillRect(x-1,y-1,2,2);
+  // hit marker — brief X on hit, bigger & red on kill
+  if(P.hitMarkerT>0){
+    const k=P.hitKill, a=Math.min(1,P.hitMarkerT/0.12), s=k?9:6;
+    ctx.strokeStyle=k?'rgba(255,70,60,'+a+')':'rgba(255,255,255,'+a+')';
+    ctx.lineWidth=k?2.4:1.8;
+    ctx.beginPath();
+    ctx.moveTo(x-s,y-s); ctx.lineTo(x-s*0.4,y-s*0.4);
+    ctx.moveTo(x+s,y-s); ctx.lineTo(x+s*0.4,y-s*0.4);
+    ctx.moveTo(x-s,y+s); ctx.lineTo(x-s*0.4,y+s*0.4);
+    ctx.moveTo(x+s,y+s); ctx.lineTo(x+s*0.4,y+s*0.4);
+    ctx.stroke();
+  }
+  // combo streak
+  if(RAID.combo>=3){
+    const a=Math.min(1,RAID.comboT/0.6);
+    ctx.globalAlpha=a;
+    ctx.fillStyle=RAID.combo>=10?'#ff6a4a':RAID.combo>=6?'#ffb04a':'#ffd257';
+    ctx.font='bold '+(15+Math.min(14,RAID.combo))+'px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(RAID.combo+'x', x, y-26);
+    ctx.globalAlpha=1; ctx.textAlign='left';
+  }
 }
 
 // -------- actors ------------------------------------------------------------
